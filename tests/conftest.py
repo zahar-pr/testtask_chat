@@ -19,14 +19,16 @@ class FakeLLM:
     def __init__(self) -> None:
         self.calls: list[list[ChatTurn]] = []
         self.error: LLMError | None = None  # модель не ответила вовсе
-        self.error_midway: LLMError | None = None  # ответ оборвался после первой части
+        self.error_midway: LLMError | None = None  # ответ обрывается после первой части…
+        self.error_midway_times = 99  # …столько раз подряд
 
     def stream(self, system_prompt: str, turns: Sequence[ChatTurn]) -> Iterator[str]:
         self.calls.append(list(turns))
         if self.error:
             raise self.error
         yield f"Ответ на «{turns[-1].text}»: "
-        if self.error_midway:
+        if self.error_midway and self.error_midway_times > 0:
+            self.error_midway_times -= 1
             raise self.error_midway
         yield "$x = 1$"
 

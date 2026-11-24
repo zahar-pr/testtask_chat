@@ -55,10 +55,24 @@ def test_answer_cut_off_midway_ends_with_error_event_and_is_not_stored(authed, l
 
     assert response.status_code == 201  # заголовки ушли до сбоя — об ошибке сообщает событие
     events = sse_events(response)
-    assert [name for name, _ in events] == ["delta", "error"]
+    # одна повторная попытка (reset), затем честная ошибка
+    assert [name for name, _ in events] == ["delta", "reset", "delta", "error"]
+    assert len(llm.calls) == 2
     assert events[-1][1]["code"] == "llm_unavailable"
     assert "reset" not in events[-1][1]["message"]
     assert authed.get("/api/messages").json()["messages"] == []
+
+
+def test_answer_cut_off_once_is_restarted_and_stored(authed, llm):
+    llm.error_midway = LLMError(LLMFailure.UNAVAILABLE, "stream closed")
+    llm.error_midway_times = 1
+
+    events = sse_events(authed.post("/api/messages", json={"text": "2+2?"}))
+
+    assert [name for name, _ in events] == ["delta", "reset", "delta", "delta", "done"]
+    history = authed.get("/api/messages").json()["messages"]
+    assert [m["role"] for m in history] == ["user", "assistant"]
+    assert history[1]["text"] == "Ответ на «2+2?»: $x = 1$"  # без обрывка первой попытки
 
 
 def test_history_survives_restart(authed, settings, llm):

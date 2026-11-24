@@ -8,9 +8,9 @@ import { MESSAGE, checkMessage } from '../validation.js';
 
 const SUGGESTIONS = [
   { label: 'Уравнение', display: 'Решить $x^2 - 5x + 6 = 0$', text: 'Реши уравнение x^2 - 5x + 6 = 0' },
-  { label: 'Интеграл', display: 'Найти $\\int x e^{x}\\,dx$', text: 'Найди интеграл от x·e^x по dx' },
-  { label: 'Объяснение', display: 'Что такое производная?', text: 'Объясни простыми словами, что такое производная' },
-  { label: 'Доказательство', display: 'Почему $\\sqrt{2}$ иррационально?', text: 'Докажи, что корень из 2 — иррациональное число' },
+  { label: 'График', display: 'Построить $y = \\sin x$ и $y = \\cos x$', text: 'Построй графики y = sin(x) и y = cos(x) и отметь точки пересечения' },
+  { label: 'Наглядно', display: 'Как $a$, $b$, $c$ меняют параболу?', text: 'Объясни наглядно, как коэффициенты a, b и c влияют на параболу' },
+  { label: 'Тренажёр', display: 'Потренироваться на процентах', text: 'Дай тренажёр из трёх заданий на проценты' },
 ];
 
 const SLOW_ANSWER_MS = 10_000;
@@ -95,10 +95,11 @@ export function createChatView({ onSessionLost, onLogout }) {
     );
   }
 
-  function storedMessage(message) {
+  /** widgets — уже нарисованные графики и тренажёры этого ответа (см. streamingAnswer). */
+  function storedMessage(message, widgets = null) {
     const node = message.role === 'user'
       ? userMessage(message.text, timeElement(message.created_at))
-      : assistantMessage(el('div', { class: 'prose' }, renderMarkdown(message.text)), timeElement(message.created_at));
+      : assistantMessage(el('div', { class: 'prose' }, renderMarkdown(message.text, { widgets })), timeElement(message.created_at));
     node.dataset.id = message.id;
     return node;
   }
@@ -121,6 +122,9 @@ export function createChatView({ onSessionLost, onLogout }) {
     const node = assistantMessage(prose);
     node.classList.add('is-streaming');
 
+    // Готовые графики и тренажёры переживают перерисовки: иначе каждый кадр «печати» они
+    // создавались бы заново и сбрасывали, например, положение ползунка.
+    const widgets = new Map();
     let received = ''; // всё, что уже пришло от сервера
     let shown = 0; // сколько символов из этого уже на экране
     let timer = null;
@@ -135,7 +139,7 @@ export function createChatView({ onSessionLost, onLogout }) {
         shown = Math.min(received.length, shown + step);
 
         const follow = isNearEnd(); // если пользователь отмотал ленту вверх — не дёргаем её
-        prose.replaceChildren(renderMarkdown(stablePart(received.slice(0, shown))));
+        prose.replaceChildren(renderMarkdown(stablePart(received.slice(0, shown)), { widgets }));
         if (follow) scrollToEnd();
       }
       if (shown < received.length) timer = setTimeout(tick, TYPING_FRAME_MS);
@@ -144,9 +148,17 @@ export function createChatView({ onSessionLost, onLogout }) {
 
     return {
       node,
+      widgets,
       push(delta) {
         received += delta;
         if (timer === null) timer = setTimeout(tick, TYPING_FRAME_MS);
+      },
+      /** Ответ запрошен заново: стереть напечатанное и начать с чистого листа. */
+      reset() {
+        received = '';
+        shown = 0;
+        widgets.clear();
+        prose.replaceChildren();
       },
       /** Дождаться, пока всё полученное будет допечатано. */
       settled() {
@@ -186,7 +198,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     refresh();
     try {
       const messages = await api.listMessages();
-      list.append(...messages.map(storedMessage));
+      list.append(...messages.map((message) => storedMessage(message)));
       loaded = true;
       setStatus();
     } catch (error) {
@@ -225,13 +237,14 @@ export function createChatView({ onSessionLost, onLogout }) {
           }
           answer.push(delta);
         },
+        onReset: () => answer?.reset(),
       });
       await answer?.settled();
 
       // Ответ готов и сохранён: заменяем черновики записями из истории (с датой и временем).
       const follow = isNearEnd();
       draft.replaceWith(storedMessage(exchange.user));
-      (answer?.node ?? typing).replaceWith(storedMessage(exchange.assistant));
+      (answer?.node ?? typing).replaceWith(storedMessage(exchange.assistant, answer?.widgets));
       if (follow) scrollToEnd();
     } catch (error) {
       // Оборвавшийся ответ не сохранён на сервере, поэтому убираем и его начало с экрана.

@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import require_session
 from app.chat.schemas import ExchangeResponse, HistoryResponse, MessageRequest
-from app.chat.service import AnswerChunk, ChatService, Exchange
+from app.chat.service import AnswerChunk, AnswerRestart, ChatEvent, ChatService
 from app.errors import describe_llm_error
 from app.llm.base import LLMError
 
@@ -39,6 +39,7 @@ def send_message(payload: MessageRequest, chat: Chat) -> StreamingResponse:
     """Ответ модели приходит потоком событий (Server-Sent Events):
 
     - `delta` `{"text"}` — очередная часть ответа;
+    - `reset` `{}` — ответ оборвался и запрошен заново: показанный текст нужно стереть;
     - `done` `{"user", "assistant"}` — пара сохранена в историю;
     - `error` `{"code", "message"}` — ответ оборвался, в историю ничего не попало.
     """
@@ -60,11 +61,13 @@ def clear_messages(chat: Chat) -> None:
     chat.clear()
 
 
-def _to_sse(events: Iterator[AnswerChunk | Exchange]) -> Iterator[str]:
+def _to_sse(events: Iterator[ChatEvent]) -> Iterator[str]:
     try:
         for event in events:
             if isinstance(event, AnswerChunk):
                 yield _sse("delta", {"text": event.text})
+            elif isinstance(event, AnswerRestart):
+                yield _sse("reset", {})
             else:
                 yield _sse("done", ExchangeResponse.model_validate(event).model_dump(mode="json"))
     except LLMError as error:

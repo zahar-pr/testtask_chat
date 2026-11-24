@@ -5,8 +5,10 @@
 //
 // Поддерживается то, что разрешено модели системным промптом, с небольшим запасом:
 // абзацы, **полужирный**, *курсив*, списки (в том числе вложенные), заголовки, цитаты, код,
-// ссылки, формулы $...$, $$...$$, \(...\), \[...\].
+// ссылки, формулы $...$, $$...$$, \(...\), \[...\], а также наглядные блоки ```plot и ```trainer
+// (графики и тренажёры — см. widgets/).
 import { el } from '../dom.js';
+import { isWidget, renderPendingWidget, renderWidget } from '../widgets/index.js';
 import { renderMath } from './math.js';
 
 // Код и формулы вырезаются из текста первыми и заменяются заглушками, чтобы звёздочки и
@@ -20,6 +22,8 @@ const QUOTE = /^ {0,3}>\s?(.*)$/;
 const BULLET = /^(\s*)([-*+•])(\s+)(.*)$/;
 const NUMBERED = /^(\s*)(\d{1,9})[.)](\s+)(.*)$/;
 
+const TRAILING_PUNCTUATION = /^[.,;:!?)»…]+/;
+
 const INLINE = new RegExp(
   [
     '[\\u0000\\u0001](\\d+)[\\u0000\\u0001]', // 1: заглушка
@@ -31,15 +35,49 @@ const INLINE = new RegExp(
   'gu',
 );
 
-export function renderMarkdown(source) {
+// Признак блока, который ещё «печатается»: его подставляет render/streaming.js.
+export const PENDING_PREFIX = 'pending-';
+
+/** Разметка внутри одной строки (подписи графиков, варианты ответа): формулы, **полужирный**, код. */
+export function renderInlineMarkdown(source) {
+  const fragment = document.createDocumentFragment();
+  for (const block of renderMarkdown(source.replace(/\s*\n\s*/g, ' ')).childNodes) {
+    fragment.append(...(block.nodeName === 'P' ? block.childNodes : [block]));
+  }
+  return fragment;
+}
+
+const WIDGET_CONTEXT = { renderBlock: (text) => renderMarkdown(text), renderInline: renderInlineMarkdown };
+
+/**
+ * widgets — необязательная память между перерисовками одного сообщения (Map): пока ответ
+ * «печатается», уже готовые графики и тренажёры не создаются заново и не теряют состояние.
+ */
+export function renderMarkdown(source, { widgets = null } = {}) {
   const stash = [];
   const keep = (mark, node) => `${mark}${stash.push(node) - 1}${mark}`;
+
+  const seen = new Map(); // одинаковые блоки в одном сообщении — разные элементы
+  const fence = (language, code) => {
+    const kind = language.trim().toLowerCase();
+    if (kind.startsWith(PENDING_PREFIX) && isWidget(kind.slice(PENDING_PREFIX.length))) {
+      return renderPendingWidget(kind.slice(PENDING_PREFIX.length));
+    }
+    if (!isWidget(kind)) return el('pre', {}, el('code', {}, code));
+
+    const repeat = seen.get(code) ?? 0;
+    seen.set(code, repeat + 1);
+    const key = `${kind}#${repeat}:${code}`;
+    const node = widgets?.get(key) ?? renderWidget(kind, code, WIDGET_CONTEXT);
+    widgets?.set(key, node);
+    return node;
+  };
 
   const text = source
     .replace(/\r\n?/g, '\n')
     .replace(/[\u0000\u0001]/g, '')
     // блоки кода ```...```
-    .replace(/```[^\n`]*\n([\s\S]*?)(?:\n[ \t]*```|$)/g, (_, code) => keep(BLOCK_MARK, el('pre', {}, el('code', {}, code))))
+    .replace(/```([^\n`]*)\n([\s\S]*?)(?:\n[ \t]*```|$)/g, (_, language, code) => keep(BLOCK_MARK, fence(language, code)))
     // `код в строке`
     .replace(/`([^`\n]+)`/g, (_, code) => keep(INLINE_MARK, el('code', {}, code)))
     // формулы отдельной строкой: $$...$$ и \[...\]
@@ -196,15 +234,23 @@ function renderInline(parent, text, stash) {
   for (const match of text.matchAll(INLINE)) {
     if (match.index > last) parent.append(text.slice(last, match.index));
     const [, placeholder, bold, italic, linkText, linkUrl] = match;
+    last = match.index + match[0].length;
 
-    if (placeholder !== undefined) parent.append(stash[Number(placeholder)]);
-    else if (bold !== undefined) parent.append(renderInline(el('strong'), bold, stash));
+    if (placeholder !== undefined) {
+      const node = stash[Number(placeholder)];
+      // Знак препинания сразу после формулы не должен уезжать на следующую строку один.
+      const punctuation = node.classList?.contains('math-inline') ? TRAILING_PUNCTUATION.exec(text.slice(last))?.[0] : null;
+      if (punctuation) {
+        parent.append(el('span', { class: 'nowrap' }, node, punctuation));
+        last += punctuation.length;
+      } else parent.append(node);
+      continue;
+    }
+    if (bold !== undefined) parent.append(renderInline(el('strong'), bold, stash));
     else if (italic !== undefined) parent.append(renderInline(el('em'), italic, stash));
     else if (linkText !== undefined) {
       parent.append(renderInline(el('a', { href: linkUrl, target: '_blank', rel: 'noopener noreferrer' }), linkText, stash));
     } else parent.append(el('br'));
-
-    last = match.index + match[0].length;
   }
   if (last < text.length) parent.append(text.slice(last));
   return parent;

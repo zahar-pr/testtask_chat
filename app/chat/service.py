@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -19,11 +20,26 @@ class AnswerChunk:
 
 
 @dataclass(frozen=True)
+class AnswerRestart:
+    """Ответ оборвался и запрошен заново: всё показанное до этого нужно стереть."""
+
+
+@dataclass(frozen=True)
 class Exchange:
     """Завершённая и сохранённая пара «вопрос — ответ»."""
 
     user: Message
     assistant: Message
+
+
+logger = logging.getLogger(__name__)
+
+# Сколько раз заново запросить ответ, если он оборвался на полуслове (с бесплатным Gemini
+# это случается), и какие сбои считаются временными.
+RESTARTS = 1
+TRANSIENT = {LLMFailure.UNAVAILABLE, LLMFailure.TIMEOUT}
+
+ChatEvent = AnswerChunk | AnswerRestart | Exchange
 
 
 class ChatService:
@@ -35,11 +51,12 @@ class ChatService:
     def history(self) -> list[Message]:
         return self._messages.list_all()
 
-    def send(self, text: str) -> Iterator[AnswerChunk | Exchange]:
+    def send(self, text: str) -> Iterator[ChatEvent]:
         """Спросить модель: сначала идут части ответа, последним — сохранённая пара.
 
         В историю попадают только завершённые пары. Если модель не ответила или ответ
-        оборвался (LLMError), в базе ничего не меняется — вопрос можно отправить заново.
+        оборвался и повторная попытка не помогла (LLMError), в базе ничего не меняется —
+        вопрос можно отправить заново.
         """
         asked_at = utc_now()
         # В истории лежат только пары «вопрос — ответ», поэтому контекст всегда начинается с вопроса.
@@ -48,9 +65,19 @@ class ChatService:
         turns.append(ChatTurn("user", text))
 
         chunks: list[str] = []
-        for chunk in self._llm.stream(SYSTEM_PROMPT, turns):
-            chunks.append(chunk)
-            yield AnswerChunk(chunk)
+        for restarts_left in range(RESTARTS, -1, -1):
+            chunks = []
+            try:
+                for chunk in self._llm.stream(SYSTEM_PROMPT, turns):
+                    chunks.append(chunk)
+                    yield AnswerChunk(chunk)
+                break
+            except LLMError as error:
+                # Если не пришло ни одной части, клиент модели уже перебрал запасные модели сам.
+                if not chunks or not restarts_left or error.failure not in TRANSIENT:
+                    raise
+                logger.warning("Ответ оборвался (%s), запрашиваем заново", error)
+                yield AnswerRestart()
 
         answer = "".join(chunks).strip()
         if not answer:

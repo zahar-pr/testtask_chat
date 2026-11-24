@@ -20,8 +20,11 @@ def sse(*events: dict) -> httpx.Response:
     return httpx.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
 
 
-def part(text: str, **extra) -> dict:
-    return {"candidates": [{"content": {"parts": [{"text": text, **extra}]}}]}
+def part(text: str, finish: str | None = None, **extra) -> dict:
+    candidate = {"content": {"parts": [{"text": text, **extra}]}}
+    if finish:
+        candidate["finishReason"] = finish
+    return {"candidates": [candidate]}
 
 
 def answer(client: GeminiClient) -> str:
@@ -35,7 +38,7 @@ def test_sends_prompt_history_and_key_in_header():
         seen["url"] = str(request.url)
         seen["key"] = request.headers["x-goog-api-key"]
         seen["body"] = json.loads(request.content)
-        return sse(part("6"))
+        return sse(part("6", finish="STOP"))
 
     assert "".join(make_client(handler).stream("Ты математик", TURNS)) == "6"
     assert "/models/primary:streamGenerateContent" in seen["url"] and "secret" not in seen["url"]
@@ -59,10 +62,20 @@ def test_falls_back_to_next_model_when_primary_is_overloaded():
         asked.append(request.url.path.split("/")[-1].split(":")[0])
         if "primary" in request.url.path:
             return httpx.Response(503, json={"error": {"message": "overloaded"}})
-        return sse(part("ответ запасной модели"))
+        return sse(part("ответ запасной модели", finish="STOP"))
 
     assert answer(make_client(handler)) == "ответ запасной модели"
     assert asked == ["primary", "backup"]
+
+
+@pytest.mark.parametrize("ending", [[part(" и так да", finish="MAX_TOKENS")], []])
+def test_cut_off_answer_is_an_error_not_a_complete_answer(ending):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return sse(part("Начало ответа"), *ending)  # лимит токенов либо поток закрылся без STOP
+
+    with pytest.raises(LLMError) as caught:
+        answer(make_client(handler, models=("only",)))
+    assert caught.value.failure is LLMFailure.UNAVAILABLE
 
 
 def test_no_fallback_once_answer_has_started():

@@ -1,0 +1,131 @@
+/* Наглядные блоки в ответах: графики (plot) и тренажёры (trainer). Один стиль на все блоки:
+   общая карточка, общие шрифты и цвета из tokens.css — в том числе в тёмной теме. */
+.widget {
+  margin: 1em 0; padding: 14px 16px 16px;
+  border: 1px solid var(--line); border-radius: var(--radius-m);
+  background: var(--surface);
+  font-size: 14px; line-height: 1.55;
+}
+.widget__title { margin: 0 0 10px; font: 650 16px/1.35 var(--font-heading); letter-spacing: -0.012em; }
+.widget .widget__caption { margin: 10px 0 0; font-size: 13px; color: var(--ink-soft); }
+.widget .katex { font-size: 1.12em; }
+
+.widget--pending { display: flex; align-items: center; gap: 10px; color: var(--ink-faint); }
+.widget--pending .spinner { display: block; width: 16px; height: 16px; color: var(--accent); }
+.widget--failed { border-style: dashed; }
+.widget .widget__failed-title { margin: 0; font-weight: 600; }
+.widget .widget__failed-reason { margin: 4px 0 0; font-size: 13px; color: var(--ink-soft); }
+
+/* --- График --- */
+.plot { margin-inline: 0; }
+.plot__canvas { position: relative; touch-action: pan-y; }
+.plot__svg { display: block; max-width: 100%; height: auto; cursor: crosshair; }
+
+.plot__grid line { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.plot__grid line.plot__axis { stroke: var(--ink-faint); }
+.plot__grid text { fill: var(--ink-faint); font: 11px var(--font-text); }
+
+.plot__curve { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.plot__stroke { fill: none; stroke: var(--c); stroke-width: 1.75; stroke-linecap: round; }
+.plot__stroke--thin { stroke-width: 1.25; }
+.plot__svg .is-dashed { stroke-dasharray: 6 5; }
+.plot__area { fill: var(--c); fill-opacity: .13; }
+.plot__polygon { fill: var(--c); fill-opacity: .1; stroke: var(--c); stroke-width: 1.75; stroke-linejoin: round; }
+.plot__point { fill: var(--c); stroke: var(--surface); stroke-width: 2; }
+.plot__crosshair { stroke: var(--ink-faint); stroke-width: 1; shape-rendering: crispEdges; }
+.plot__hover { pointer-events: none; }
+
+/* Подписи лежат поверх рисунка обычным HTML — поэтому в них работают формулы. */
+.plot__labels { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.plot__label {
+  position: absolute; padding: 0 4px; border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  font-size: 12.5px; line-height: 1.35; white-space: nowrap;
+}
+.plot__label--point { transform: translate(6px, calc(-100% - 5px)); }
+.plot__label--point-left { transform: translate(calc(-100% - 6px), calc(-100% - 5px)); }
+.plot__label--above { transform: translate(-50%, calc(-100% - 5px)); }
+.plot__label--center { transform: translate(-50%, -50%); background: none; }
+.plot__label--beside { transform: translate(5px, 0); }
+
+.plot__tooltip {
+  position: absolute; z-index: 1; padding: 7px 10px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-s);
+  background: var(--surface); box-shadow: var(--shadow-float);
+  font-size: 12.5px; line-height: 1.5; white-space: nowrap; pointer-events: none;
+}
+.plot__tooltip.is-flipped { transform: translateX(-100%); }
+.plot__tooltip-x { color: var(--ink-soft); }
+.plot__tooltip-row { display: flex; align-items: center; gap: 7px; }
+.plot__tooltip-name { color: var(--ink-soft); }
+.plot__tooltip-value { margin-left: auto; padding-left: 10px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Образец линии в легенде и подсказке: цвет несёт линия, а текст остаётся цветом текста. */
+.plot__swatch { flex: none; display: inline-block; width: 16px; border-top: 2px solid var(--c); border-radius: 1px; }
+.plot__swatch.is-dashed { border-top-style: dashed; }
+
+.widget .plot__legend { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 8px 0 0; padding: 0; list-style: none; }
+.widget .plot__legend-item { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0; font-size: 13px; color: var(--ink-soft); }
+
+.plot__params { display: grid; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.plot__param { display: grid; grid-template-columns: minmax(92px, max-content) 1fr; align-items: center; gap: 14px; }
+.plot__param-name { white-space: nowrap; }
+.plot__param-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.plot__slider { width: 100%; height: 22px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+.plot__readouts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.plot__readout { padding: 3px 10px; border-radius: 999px; background: var(--surface-sunken); font-size: 13px; white-space: nowrap; }
+.plot__readout-value { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* --- Тренажёр --- */
+.trainer__header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+.trainer__header .widget__title { margin: 0; }
+.trainer__status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-faint); }
+.widget .trainer__progress { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.widget .trainer__step { width: 18px; height: 4px; margin: 0; padding: 0; border-radius: 2px; background: var(--line-strong); }
+.widget .trainer__step.is-current { background: var(--accent); }
+.widget .trainer__step.is-first, .widget .trainer__step.is-solved { background: var(--good); }
+.widget .trainer__step.is-revealed { background: var(--ink-faint); }
+
+.trainer__question { margin-bottom: 12px; font-size: 15px; }
+.trainer .plot { margin: 0 0 12px; padding: 0; border: 0; }
+
+.trainer__answer { display: flex; gap: 8px; }
+.trainer__input {
+  flex: 1; min-width: 0; height: 36px; padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-s);
+  background: var(--surface); outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.trainer__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.trainer__input::placeholder { color: var(--ink-faint); }
+.trainer__input:disabled { background: var(--surface-sunken); color: var(--ink-soft); }
+.trainer__answer .button { min-height: 36px; }
+
+.trainer__options { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.trainer__option {
+  min-height: 40px; padding: 8px 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-s);
+  background: var(--surface); cursor: pointer; text-align: left;
+  transition: border-color .15s, background-color .15s;
+}
+.trainer__option .katex { font-size: 1.3em; }
+.trainer__option:not(:disabled):hover { border-color: var(--accent); }
+.trainer__option:disabled { cursor: default; }
+.trainer__option.is-right { border-color: var(--good); background: var(--good-soft); }
+.trainer__option.is-wrong { border-color: var(--danger); background: var(--danger-soft); }
+
+.trainer__feedback { display: flex; align-items: baseline; gap: 8px; margin-top: 12px; font-weight: 600; }
+.trainer__feedback:empty, .trainer__extra:empty, .trainer__actions:empty { display: none; }
+.trainer__feedback.is-good { color: var(--good-ink); }
+.trainer__feedback.is-bad { color: var(--danger); }
+.trainer__note { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-s); background: var(--surface-sunken); }
+.trainer__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+.widget .trainer__verdict { margin: 4px 0 0; font: 650 17px/1.35 var(--font-heading); }
+.widget .trainer__score { margin: 6px 0 0; color: var(--ink-soft); }
+
+@media (max-width: 600px) {
+  .widget { padding: 12px 12px 14px; }
+  .plot__param { grid-template-columns: 1fr; gap: 2px; }
+}

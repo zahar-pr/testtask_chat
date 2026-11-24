@@ -4,15 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Эпсилон — чат-помощник по математике: решает задачи по шагам и показывает формулы в аккуратной записи.">
+  <meta name="description" content="Эпсилон — чат-помощник по математике: решает задачи по шагам, рисует графики и даёт тренажёры.">
   <title>Эпсилон — помощник по математике</title>
   <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/static/vendor/fonts/JetBrainsMono-normal-400-700-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/vendor/fonts/JetBrainsMono-normal-400-700-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/vendor/fonts/fonts.css">
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
   <link rel="stylesheet" href="/static/css/tokens.css">
   <link rel="stylesheet" href="/static/css/base.css">
   <link rel="stylesheet" href="/static/css/login.css">
   <link rel="stylesheet" href="/static/css/chat.css">
   <link rel="stylesheet" href="/static/css/prose.css">
+  <link rel="stylesheet" href="/static/css/widgets.css">
   <script defer src="/static/vendor/katex/katex.min.js"></script>
   <script type="module" src="/static/js/main.js"></script>
 </head>
@@ -78,7 +82,7 @@
         <section id="chat-empty" class="welcome" hidden>
           <div class="logo logo--large" aria-hidden="true">ε</div>
           <h2 class="welcome__title">Какую задачу разберём?</h2>
-          <p class="welcome__lead">Спросите о чём угодно из математики — от дробей до интегралов. Решу по шагам и покажу формулы в аккуратной записи.</p>
+          <p class="welcome__lead">Спросите о чём угодно из математики — от дробей до интегралов. Решу по шагам, нарисую график и дам потренироваться.</p>
           <ul id="suggestions" class="welcome__suggestions" aria-label="Примеры вопросов"></ul>
         </section>
 

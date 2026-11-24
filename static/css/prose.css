@@ -4,8 +4,8 @@
 .prose > :last-child { margin-bottom: 0; }
 
 .prose p { margin: .7em 0; }
-.prose h3, .prose h4 { margin: 1.2em 0 .4em; font-size: 1.05em; line-height: 1.35; }
-.prose h3 { font-size: 1.15em; }
+.prose h3, .prose h4 { margin: 1.3em 0 .45em; font-size: 1.12em; font-weight: 650; line-height: 1.35; }
+.prose h3 { font-size: 1.28em; }
 .prose strong { font-weight: 650; }
 .prose a { color: var(--accent); }
 .prose hr { margin: 1.2em 0; border: 0; border-top: 1px solid var(--line); }
@@ -20,29 +20,31 @@
 
 .prose code {
   padding: .1em .35em; border-radius: 5px;
-  background: var(--surface-sunken); font: .9em var(--font-mono);
+  background: var(--surface-sunken); font-size: .93em;
 }
 .prose pre {
   margin: .8em 0; padding: 12px 14px; overflow-x: auto;
   border-radius: var(--radius-s); background: var(--surface-sunken);
-  font: 14px/1.5 var(--font-mono);
+  font-size: 13.5px; line-height: 1.5;
 }
 .prose pre code { padding: 0; background: none; font-size: inherit; }
 
 /* Формулы. Длинная выкладка прокручивается сама, не ломая ширину ленты. */
-.prose .katex { font-size: 1.1em; }
+/* У JetBrains Mono высокие строчные буквы — формулы чуть крупнее, чтобы не терялись рядом с текстом. */
+.prose .katex { font-size: 1.16em; }
 .math-display {
   display: block; margin: .8em 0; padding: 4px 2px;
   overflow-x: auto; overflow-y: hidden; text-align: center;
   scrollbar-width: thin;
 }
 .math-display > .katex-display { margin: 0; }
-.math-display > .katex-display > .katex { font-size: 1.16em; }
-.math-error { font: .9em var(--font-mono); color: var(--ink-soft); white-space: pre-wrap; text-align: left; }
+.math-display > .katex-display > .katex { font-size: 1.22em; }
+.nowrap { white-space: nowrap; }
+.math-error { font-size: .9em; color: var(--ink-soft); white-space: pre-wrap; text-align: left; }
 
 .suggestion .katex { font-size: 1.05em; }
 
 @media (max-width: 600px) {
   /* На телефоне выкладки чуть мельче, чтобы реже приходилось прокручивать их вбок. */
-  .math-display > .katex-display > .katex { font-size: 1.02em; }
+  .math-display > .katex-display > .katex { font-size: 1.05em; }
 }

@@ -66,6 +66,7 @@ class GeminiClient:
     def _stream_model(self, model: str, payload: dict) -> Iterator[str]:
         url = f"{API_ROOT}/models/{model}:streamGenerateContent"
         got_text = False
+        finish_reason: str | None = None
         last_event: dict = {}
         try:
             with self._http.stream(
@@ -80,6 +81,7 @@ class GeminiClient:
                     if not line.startswith("data:"):
                         continue
                     last_event = json.loads(line[len("data:"):])
+                    finish_reason = _finish_reason(last_event) or finish_reason
                     if text := _event_text(last_event):
                         got_text = True
                         yield text
@@ -92,6 +94,10 @@ class GeminiClient:
 
         if not got_text:
             raise LLMError(LLMFailure.NO_ANSWER, f"{model}: пустой ответ ({_empty_reason(last_event)})")
+        # Нормальное завершение — только STOP. Всё остальное (лимит токенов, фильтр, поток
+        # закрылся без причины) значит, что ответ оборван: обрывок за готовый ответ не выдаём.
+        if finish_reason != "STOP":
+            raise LLMError(LLMFailure.UNAVAILABLE, f"{model}: ответ оборван ({finish_reason or 'поток закрыт'})")
 
 
 def _failure_for_status(status_code: int) -> LLMFailure:
@@ -117,7 +123,10 @@ def _event_text(event: dict) -> str:
     return "".join(part.get("text", "") for part in parts if not part.get("thought"))
 
 
+def _finish_reason(event: dict) -> str | None:
+    return (event.get("candidates") or [{}])[0].get("finishReason")
+
+
 def _empty_reason(event: dict) -> str:
     block_reason = (event.get("promptFeedback") or {}).get("blockReason")
-    finish_reason = (event.get("candidates") or [{}])[0].get("finishReason")
-    return str(block_reason or finish_reason or "нет вариантов ответа")
+    return str(block_reason or _finish_reason(event) or "нет вариантов ответа")

@@ -23,9 +23,25 @@
   --shadow-card: 0 1px 2px rgba(29, 28, 26, 0.04), 0 12px 40px rgba(29, 28, 26, 0.08);
   --shadow-float: 0 1px 2px rgba(29, 28, 26, 0.05), 0 6px 24px rgba(29, 28, 26, 0.07);
 
-  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Текст — моноширинный JetBrains Mono, заголовки — Geologica: тот же геометрический характер
+     и открытые формы, но пропорциональный и плотный, поэтому заголовок сразу отличим от текста. */
+  --font-text: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-heading: "Geologica", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-math: KaTeX_Math, "Times New Roman", Georgia, serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Палитра графиков: порядок фиксирован, соседние цвета различимы и при нарушениях
+     цветового зрения (проверено валидатором для светлой и тёмной поверхности). */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --muted: var(--ink-faint);
+
+  --good: #0ca30c;
+  --good-ink: #006300;
+  --good-soft: #e7f5e7;
 
   --radius-s: 8px;
   --radius-m: 14px;
@@ -50,6 +66,17 @@
     --accent-ink: #10152e;
     --accent-soft: #262d50;
     --accent-soft-ink: #dfe4ff;
+
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #0ca30c;
+
+    --good: #0ca30c;
+    --good-ink: #4fc44f;
+    --good-soft: #17301a;
 
     --danger: #ff8d7e;
     --danger-hover: #ffa598;

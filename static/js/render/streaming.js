@@ -4,6 +4,9 @@
 // сырым LaTeX, а потом скачком превратилась в формулу. Поэтому до разбора от текста отрезается
 // «хвост», который ещё не закончен, — формула появляется целиком, когда дописана.
 
+import { isWidget } from '../widgets/index.js';
+import { PENDING_PREFIX } from './markdown.js';
+
 const NOT_MATH = -1; // строка закончилась без закрывающего $ — это был просто знак доллара
 const PENDING = -2; // текст оборвался посреди формулы
 
@@ -15,7 +18,7 @@ export function stablePart(text) {
 
     if (text.startsWith('```', index)) {
       const close = text.indexOf('```', index + 3);
-      if (close === -1) return text; // блок кода показываем и недописанным
+      if (close === -1) return unfinishedFence(text, index);
       index = close + 3;
     } else if (char === '`') {
       const close = text.indexOf('`', index + 1);
@@ -50,6 +53,18 @@ export function stablePart(text) {
     }
   }
   return tidy(text);
+}
+
+/**
+ * Недописанный блок ```…: обычный код показываем как есть, а описание графика или тренажёра
+ * прячем за заглушкой «Рисую график…» — сырой JSON на экране ни к чему.
+ */
+function unfinishedFence(text, start) {
+  const lineEnd = text.indexOf('\n', start);
+  if (lineEnd === -1) return tidy(text.slice(0, start)); // ещё не дописано даже название блока
+  const kind = text.slice(start + 3, lineEnd).trim().toLowerCase();
+  if (!isWidget(kind)) return text;
+  return `${tidy(text.slice(0, start))}\n\n\`\`\`${PENDING_PREFIX}${kind}\n\n\`\`\``;
 }
 
 function closingDollar(text, from) {
