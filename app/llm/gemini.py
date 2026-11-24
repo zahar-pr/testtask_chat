@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 
 import httpx
 
@@ -16,7 +16,15 @@ API_ROOT = "https://generativelanguage.googleapis.com/v1beta"
 _ROLE_NAMES = {"user": "user", "assistant": "model"}
 
 # Сбои, после которых нет смысла пробовать другую модель: дело в ключе или в самом запросе.
-_FATAL = {LLMFailure.MISCONFIGURED, LLMFailure.NO_ANSWER}
+_FATAL = {LLMFailure.MISCONFIGURED, LLMFailure.NO_ANSWER, LLMFailure.TRUNCATED, LLMFailure.BLOCKED}
+# Чем закончился ответ, если не обычным STOP.
+_FINISH_FAILURES = {
+    "MAX_TOKENS": LLMFailure.TRUNCATED,
+    "SAFETY": LLMFailure.BLOCKED,
+    "RECITATION": LLMFailure.BLOCKED,
+    "PROHIBITED_CONTENT": LLMFailure.BLOCKED,
+    "BLOCKLIST": LLMFailure.BLOCKED,
+}
 
 
 class GeminiClient:
@@ -26,6 +34,7 @@ class GeminiClient:
         models: Sequence[str],
         timeout_seconds: float = 20,
         http_client: httpx.Client | None = None,
+        on_model: Callable[[str], None] | None = None,
     ) -> None:
         if not models:
             raise ValueError("нужна хотя бы одна модель")
@@ -33,9 +42,8 @@ class GeminiClient:
         # Таймаут — на ожидание очередной части ответа, а не на весь ответ целиком.
         self._http = http_client or httpx.Client(timeout=timeout_seconds)
         self._headers = {"x-goog-api-key": api_key}
-        # Какая модель из цепочки дала последний ответ. Только для диагностики и отчётов
-        # (см. evals/): при одновременных запросах значение относится к любому из них.
-        self.last_model: str | None = None
+        # Вызывается с именем модели, когда она начала отвечать, — для отчётов (см. evals/).
+        self._on_model = on_model
 
     def close(self) -> None:
         self._http.close()
@@ -53,8 +61,9 @@ class GeminiClient:
             started = False
             try:
                 for chunk in self._stream_model(model, payload):
+                    if not started and self._on_model:
+                        self._on_model(model)
                     started = True
-                    self.last_model = model
                     yield chunk
                 return
             except LLMError as error:
@@ -97,11 +106,15 @@ class GeminiClient:
             raise LLMError(LLMFailure.UNAVAILABLE, f"{model}: неразборчивый ответ") from error
 
         if not got_text:
-            raise LLMError(LLMFailure.NO_ANSWER, f"{model}: пустой ответ ({_empty_reason(last_event)})")
-        # Нормальное завершение — только STOP. Всё остальное (лимит токенов, фильтр, поток
-        # закрылся без причины) значит, что ответ оборван: обрывок за готовый ответ не выдаём.
+            blocked = (last_event.get("promptFeedback") or {}).get("blockReason")
+            failure = LLMFailure.BLOCKED if blocked else _FINISH_FAILURES.get(finish_reason or "", LLMFailure.NO_ANSWER)
+            raise LLMError(failure, f"{model}: пустой ответ ({blocked or finish_reason or 'нет вариантов ответа'})")
+        # Нормальное завершение — только STOP. Иначе ответ неполон, и обрывок за готовый ответ
+        # не выдаём: лимит длины и отказ модели — отдельные исходы (повтор их не исправит),
+        # а поток, закрывшийся без причины, — временный сбой.
         if finish_reason != "STOP":
-            raise LLMError(LLMFailure.UNAVAILABLE, f"{model}: ответ оборван ({finish_reason or 'поток закрыт'})")
+            failure = _FINISH_FAILURES.get(finish_reason or "", LLMFailure.UNAVAILABLE)
+            raise LLMError(failure, f"{model}: ответ оборван ({finish_reason or 'поток закрыт'})")
 
 
 def _failure_for_status(status_code: int) -> LLMFailure:
@@ -129,8 +142,3 @@ def _event_text(event: dict) -> str:
 
 def _finish_reason(event: dict) -> str | None:
     return (event.get("candidates") or [{}])[0].get("finishReason")
-
-
-def _empty_reason(event: dict) -> str:
-    block_reason = (event.get("promptFeedback") or {}).get("blockReason")
-    return str(block_reason or _finish_reason(event) or "нет вариантов ответа")

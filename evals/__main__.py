@@ -48,7 +48,8 @@ class Outcome:
         return not self.error and all(result.passed for result in self.results)
 
 
-def run_case(client: GeminiClient, case: Case) -> Outcome:
+def run_case(client: GeminiClient, answered_by: list[str], case: Case) -> Outcome:
+    """answered_by — список, куда клиент дописывает имя модели каждый раз, когда она начинает отвечать."""
     turns = [ChatTurn("user", as_model_input(case.text, case.mode))]
     error = ""
     for attempt in range(ATTEMPTS):
@@ -61,7 +62,7 @@ def run_case(client: GeminiClient, case: Case) -> Outcome:
             continue
         answer = parse_answer(text)
         results = [check(answer) for check in case.checks]
-        return Outcome(case, results, time.monotonic() - started, client.last_model or "?", text=text)
+        return Outcome(case, results, time.monotonic() - started, answered_by[-1], text=text)
     return Outcome(case, [], 0.0, "—", error=error)
 
 
@@ -108,13 +109,17 @@ def main() -> int:
     # Сообщения клиента о переходе на запасную модель здесь только шум: итог виден в отчёте.
     logging.getLogger("app.llm.gemini").setLevel(logging.ERROR)
     settings = get_settings()
+    answered_by: list[str] = []
     client = GeminiClient(
-        settings.gemini_api_key.get_secret_value(), settings.gemini_models, settings.gemini_timeout_seconds
+        settings.gemini_api_key.get_secret_value(),
+        settings.gemini_models,
+        settings.gemini_timeout_seconds,
+        on_model=answered_by.append,
     )
     cases = [case for case in CASES if not args.only or args.only.lower() in case.name.lower()]
     outcomes = []
     for number, case in enumerate(cases, 1):
-        outcome = run_case(client, case)
+        outcome = run_case(client, answered_by, case)
         outcomes.append(outcome)
         failed = [result for result in outcome.results if not result.passed]
         status = "нет ответа" if outcome.error else ("ok" if not failed else f"не прошло: {len(failed)}")

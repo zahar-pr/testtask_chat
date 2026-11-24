@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.auth.rate_limit import LoginRateLimiter
+from app.auth.service import AuthService
+from app.auth.sessions import SessionRepository
+from app.clock import utc_now
 from app.config import Settings
+from app.db import Database
 from app.main import create_app
-from tests.conftest import ACCESS_KEY
+from app.migrations import MIGRATIONS
+from tests.helpers import ACCESS_KEY
 
 
 def test_protected_endpoints_require_session(client):
@@ -54,15 +61,36 @@ def test_login_attempts_are_rate_limited(client):
     assert int(blocked.headers["retry-after"]) > 0
 
 
-def test_rate_limiter_window_expires():
+def test_rate_limiter_counts_attempts_per_client_within_a_window():
     now = [0.0]
     limiter = LoginRateLimiter(max_attempts=2, window_seconds=60, timer=lambda: now[0])
-    limiter.record_failure("ip")
-    limiter.record_failure("ip")
-    assert limiter.retry_after("ip") == 60
-    assert limiter.retry_after("other") == 0
+
+    assert limiter.attempt("ip") == 0
+    assert limiter.attempt("ip") == 0
+    assert limiter.attempt("ip") == 60  # третья попытка — ждать до конца окна
+    assert limiter.attempt("other") == 0  # у другого адреса свой счёт
     now[0] = 61
-    assert limiter.retry_after("ip") == 0
+    assert limiter.attempt("ip") == 0  # окно истекло
+
+
+def test_rate_limiter_forgets_clients_it_no_longer_needs():
+    now = [0.0]
+    limiter = LoginRateLimiter(max_attempts=2, window_seconds=60, timer=lambda: now[0])
+    for number in range(1000):
+        limiter.attempt(f"ip-{number}")
+    limiter.attempt("winner")
+    limiter.forgive("winner")  # вошёл — попытки больше не считаются
+
+    now[0] = 61
+    for number in range(1000):
+        limiter.attempt(f"ip-{number}")  # старые попытки вытесняются, а не копятся
+    assert all(len(attempts) == 1 for attempts in limiter._attempts.values())
+    assert "winner" not in limiter._attempts
+
+
+def test_successful_login_does_not_use_up_attempts(client):
+    for _ in range(10):  # лимит в тестах — 3 попытки; удачные входы его не расходуют
+        assert client.post("/api/auth/login", json={"access_key": ACCESS_KEY}).status_code == 204
 
 
 def test_requests_from_another_site_are_rejected(client):
@@ -96,16 +124,34 @@ def test_session_survives_restart(authed, settings, llm):
     assert restarted.get("/api/auth/session").json() == {"authenticated": True}
 
 
-def test_expired_session_is_rejected(settings, llm, monkeypatch):
-    from datetime import timedelta
+def test_session_expires_after_its_lifetime(settings):
+    clock = [utc_now()]
+    database = Database(settings.database_path)
+    database.migrate(MIGRATIONS)
+    auth = AuthService(ACCESS_KEY, SessionRepository(database), timedelta(hours=1), now=lambda: clock[0])
 
-    from app.auth import service
+    session = auth.login(ACCESS_KEY)
+    assert auth.is_authenticated(session.token) and session.max_age_seconds == 3600
+    clock[0] += timedelta(minutes=61)
+    assert not auth.is_authenticated(session.token)
 
-    client = TestClient(create_app(settings, llm))
-    client.post("/api/auth/login", json={"access_key": ACCESS_KEY})
-    real_now = service.utc_now
-    monkeypatch.setattr(service, "utc_now", lambda: real_now() + timedelta(hours=settings.session_ttl_hours + 1))
-    assert client.get("/api/auth/session").json() == {"authenticated": False}
+
+def test_cookie_secure_flag_follows_scheme_and_setting(settings, llm):
+    def cookie_after_login(base_url: str, policy: str) -> str:
+        app = create_app(settings.model_copy(update={"cookie_secure": policy}), llm)
+        response = TestClient(app, base_url=base_url).post("/api/auth/login", json={"access_key": ACCESS_KEY})
+        return response.headers["set-cookie"].lower()
+
+    assert "secure" not in cookie_after_login("http://testserver", "auto")
+    assert "secure" in cookie_after_login("https://testserver", "auto")
+    assert "secure" in cookie_after_login("http://testserver", "always")  # HTTPS завершается на прокси
+    assert "secure" not in cookie_after_login("https://testserver", "never")
+
+
+def test_hsts_is_sent_only_over_https(settings, llm):
+    app = create_app(settings, llm)
+    assert "strict-transport-security" not in TestClient(app).get("/api/health").headers
+    assert "strict-transport-security" in TestClient(app, base_url="https://testserver").get("/api/health").headers
 
 
 @pytest.mark.parametrize("key", ["short", "пароль-пароль", "has space 1"])

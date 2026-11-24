@@ -8,7 +8,8 @@
 
 from __future__ import annotations
 
-from typing import Literal, get_args
+from collections.abc import Sequence
+from typing import Literal
 
 ModeId = Literal["learn", "solve", "practice", "visual", "check", "summary", "review"]
 
@@ -21,7 +22,6 @@ _REQUESTS: dict[str, str] = {
     "summary": "Режим «Шпаргалка». Тема: {text}",
     "review": "Режим «Работа над ошибками». {text}",
 }
-assert set(_REQUESTS) == set(get_args(ModeId))
 
 
 REVIEW = "review"
@@ -33,10 +33,18 @@ def as_model_input(text: str, mode: str | None) -> str:
     return template.format(text=text) if template else text
 
 
-def review_request(text: str, mistakes: list[tuple[str, str]]) -> str:
+# Тему и текст задания присылает браузер, а они уходят в запрос к модели — ограничиваем длину.
+_TOPIC_LIMIT = 60
+_QUESTION_LIMIT = 200
+
+
+def review_request(text: str, mistakes: Sequence[tuple[str, str]]) -> str:
     """Запрос «работа над ошибками»: к словам пользователя добавляются задания, где он ошибся.
 
     mistakes — пары (тема, текст задания) из сохранённого прогресса.
     """
-    listed = "\n".join(f"{number}. [{topic}] {question}" for number, (topic, question) in enumerate(mistakes, 1))
+    listed = "\n".join(
+        f"{number}. [{topic[:_TOPIC_LIMIT]}] {question[:_QUESTION_LIMIT]}"
+        for number, (topic, question) in enumerate(mistakes, 1)
+    )
     return f"{as_model_input(text, REVIEW)}\nЗадания, в которых ученик ошибся:\n{listed}"

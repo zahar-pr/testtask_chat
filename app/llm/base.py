@@ -22,6 +22,8 @@ class LLMFailure(str, Enum):
     TIMEOUT = "timeout"
     MISCONFIGURED = "misconfigured"
     NO_ANSWER = "no_answer"
+    TRUNCATED = "truncated"  # ответ упёрся в лимит длины
+    BLOCKED = "blocked"  # модель отказалась отвечать (фильтры безопасности и т. п.)
 
 
 class LLMError(Exception):

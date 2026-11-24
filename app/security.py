@@ -12,6 +12,8 @@ from urllib.parse import urlsplit
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from app.errors import error_body
+
 SECURITY_HEADERS = {
     # Скрипты, стили и шрифты — только свои. 'unsafe-inline' для стилей нужен KaTeX:
     # он расставляет размеры и отступы в формулах через атрибут style.
@@ -24,6 +26,7 @@ SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
 }
 
+HSTS = "max-age=31536000"  # год: браузер не откроет этот адрес по незащищённому HTTP
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
@@ -43,6 +46,8 @@ class SecurityHeadersMiddleware:
                 headers = MutableHeaders(scope=message)
                 for name, value in SECURITY_HEADERS.items():
                     headers.setdefault(name, value)
+                if scope["scheme"] == "https":  # HSTS имеет смысл только там, где HTTPS уже есть
+                    headers.setdefault("Strict-Transport-Security", HSTS)
             await send(message)
 
         await self._app(scope, receive, send_with_headers)
@@ -71,8 +76,7 @@ class SameOriginMiddleware:
 
 async def _reject(send: Send) -> None:
     body = json.dumps(
-        {"error": {"code": "cross_site_request", "message": "Запрос с другого сайта отклонён."}},
-        ensure_ascii=False,
+        error_body("cross_site_request", "Запрос с другого сайта отклонён."), ensure_ascii=False
     ).encode()
     await send({
         "type": "http.response.start",

@@ -7,39 +7,29 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, status
 
 from app.auth.dependencies import require_session
-from app.clock import utc_now
-from app.progress.repository import ProgressRepository
 from app.progress.schemas import AttemptRequest, ProgressResponse
-
-MISTAKES_SHOWN = 20
+from app.progress.service import ProgressService
 
 router = APIRouter(prefix="/api/progress", tags=["progress"], dependencies=[Depends(require_session)])
 
 
-def get_progress(request: Request) -> ProgressRepository:
-    return request.app.state.progress
+def get_progress_service(request: Request) -> ProgressService:
+    return request.app.state.progress_service
 
 
-Progress = Annotated[ProgressRepository, Depends(get_progress)]
+Service = Annotated[ProgressService, Depends(get_progress_service)]
 
 
 @router.post("/attempts", status_code=status.HTTP_204_NO_CONTENT)
-def save_attempt(payload: AttemptRequest, progress: Progress) -> None:
-    progress.save(
-        payload.message_id, payload.block, payload.task, payload.topic.strip(), payload.question.strip(),
-        payload.outcome, utc_now(),
-    )
+def save_attempt(payload: AttemptRequest, progress: Service) -> None:
+    progress.record_attempt(**payload.model_dump())
 
 
 @router.get("", response_model=ProgressResponse)
-def get_summary(progress: Progress):
-    return {
-        "totals": progress.totals(),
-        "topics": progress.by_topic(),
-        "mistakes": progress.mistakes(MISTAKES_SHOWN),
-    }
+def get_summary(progress: Service):
+    return progress.summary()
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
-def reset(progress: Progress) -> None:
-    progress.clear()
+def reset(progress: Service) -> None:
+    progress.reset()

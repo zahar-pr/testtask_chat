@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator, Sequence
 from dataclasses import dataclass
+from typing import Protocol
 
+from app.chat.errors import ChatChanged, ChatNotFound, NothingToReview
 from app.chat.modes import REVIEW, as_model_input, review_request
 from app.chat.prompt import SYSTEM_PROMPT
 from app.chat.repository import Chat, ChatRepository, Message, NewMessage
 from app.chat.titles import chat_title
 from app.clock import utc_now
-from app.errors import ChatNotFound, NothingToReplace, NothingToReview
 from app.llm.base import ChatTurn, LLMClient, LLMError, LLMFailure
-from app.progress.repository import ProgressRepository
+
+logger = logging.getLogger(__name__)
+
+# Сколько раз заново запросить ответ, если он оборвался на полуслове (с бесплатным Gemini
+# это случается), и какие сбои считаются временными — только их есть смысл повторять.
+RESTARTS = 1
+TRANSIENT = {LLMFailure.UNAVAILABLE, LLMFailure.TIMEOUT}
+# Сколько последних ошибок показывать модели в режиме «работа над ошибками».
+REVIEW_TASKS = 6
 
 
 @dataclass(frozen=True)
@@ -37,31 +46,32 @@ class Exchange:
     assistant: Message
 
 
-logger = logging.getLogger(__name__)
-
-# Сколько раз заново запросить ответ, если он оборвался на полуслове (с бесплатным Gemini
-# это случается), и какие сбои считаются временными.
-REVIEW_TASKS = 6  # сколько последних ошибок показывать модели в режиме «работа над ошибками»
-RESTARTS = 1
-TRANSIENT = {LLMFailure.UNAVAILABLE, LLMFailure.TIMEOUT}
-
 ChatEvent = AnswerChunk | AnswerRestart | Exchange
+
+
+class MistakeSource(Protocol):
+    """Откуда чат берёт задания, в которых ученик ошибся (см. app/progress/service.py)."""
+
+    def recent_mistakes(self, limit: int) -> Sequence[tuple[str, str]]:
+        """Пары (тема, текст задания), начиная с самых свежих."""
+        ...
 
 
 class ChatService:
     def __init__(
-        self, chats: ChatRepository, llm: LLMClient, context_exchanges: int, progress: ProgressRepository
+        self, chats: ChatRepository, llm: LLMClient, context_exchanges: int, mistakes: MistakeSource
     ) -> None:
         self._chats = chats
         self._llm = llm
-        self._context_exchanges = context_exchanges
-        self._progress = progress
+        self._context_messages = context_exchanges * 2  # пара — это два сообщения
+        self._mistakes = mistakes
 
     def chats(self) -> list[Chat]:
         return self._chats.list_chats()
 
     def history(self, chat_id: int) -> list[Message]:
-        self._require(chat_id)
+        if self._chats.get_chat(chat_id) is None:
+            raise ChatNotFound()
         return self._chats.list_messages(chat_id)
 
     def delete(self, chat_id: int) -> None:
@@ -72,68 +82,80 @@ class ChatService:
     ) -> Iterator[ChatEvent]:
         """Спросить модель: сначала идут части ответа, последним — сохранённая пара.
 
-        chat_id — чат, в котором задан вопрос; без него вопрос начинает новый чат. Чат создаётся
-        вместе с первой сохранённой парой, поэтому пустых чатов не бывает.
-        replace_last — вопрос заменяет последнюю пару чата: так работают «ответить заново»
-        и правка последнего вопроса. Модель при этом заменяемую пару не видит.
-        mode — заготовка, выбранная пользователем: в истории хранится его собственный текст,
-        а модель получает запрос с названием режима (и видит режимы прошлых вопросов).
+        chat_id — чат, в котором задан вопрос; без него вопрос начинает новый чат.
+        mode — заготовка: в истории хранится собственный текст пользователя, а модель получает
+        запрос с названием режима.
+        replace_last — вопрос заменяет последнюю пару чата («ответить заново», правка вопроса).
 
-        В историю попадают только завершённые пары. Если модель не ответила или ответ
-        оборвался и повторная попытка не помогла (LLMError), в базе ничего не меняется —
-        вопрос можно отправить заново.
+        В историю попадают только завершённые пары. Если модель не ответила (LLMError),
+        в базе ничего не меняется — вопрос можно отправить заново.
         """
         asked_at = utc_now()
-        context: list[Message] = []
-        if chat_id is not None:
-            self._require(chat_id)
-            # В чате лежат только пары «вопрос — ответ», поэтому контекст всегда начинается с вопроса.
-            skipped = 2 if replace_last else 0  # заменяемую пару модель видеть не должна
-            recent = self._chats.list_recent_messages(chat_id, self._context_exchanges * 2 + skipped)
-            if len(recent) < skipped:
-                raise NothingToReplace()
-            context = recent[: len(recent) - skipped]
+        context, replaced = self._context(chat_id, replace_last)
         turns = [ChatTurn(message.role, as_model_input(message.text, message.mode)) for message in context]
         turns.append(ChatTurn("user", self._model_input(text, mode)))
 
-        chunks: list[str] = []
-        for restarts_left in range(RESTARTS, -1, -1):
-            chunks = []
-            try:
-                for chunk in self._llm.stream(SYSTEM_PROMPT, turns):
-                    chunks.append(chunk)
-                    yield AnswerChunk(chunk)
-                break
-            except LLMError as error:
-                # Если не пришло ни одной части, клиент модели уже перебрал запасные модели сам.
-                if not chunks or not restarts_left or error.failure not in TRANSIENT:
-                    raise
-                logger.warning("Ответ оборвался (%s), запрашиваем заново", error)
-                yield AnswerRestart()
+        answer = yield from self._stream_with_restart(turns)
 
-        answer = "".join(chunks).strip()
-        if not answer:
-            raise LLMError(LLMFailure.NO_ANSWER, "модель вернула пустой текст")
-
-        chat, (user, assistant) = self._chats.save_exchange(
-            chat_id,
-            chat_title(text),
-            [NewMessage("user", text, asked_at, mode), NewMessage("assistant", answer, utc_now())],
-            replace_last=replace_last and chat_id is not None,
-        )
+        exchange = [NewMessage("user", text, asked_at, mode), NewMessage("assistant", answer, utc_now())]
+        if chat_id is None:
+            chat, (user, assistant) = self._chats.create_chat(chat_title(text), exchange)
+        elif replaced:
+            replaced_ids = [message.id for message in replaced]
+            chat, (user, assistant) = self._chats.replace_exchange(chat_id, replaced_ids, chat_title(text), exchange)
+        else:
+            chat, (user, assistant) = self._chats.append_exchange(chat_id, exchange)
         yield Exchange(chat=chat, user=user, assistant=assistant)
+
+    def _context(self, chat_id: int | None, replace_last: bool) -> tuple[list[Message], list[Message]]:
+        """Что модель увидит из прошлой переписки и какую пару новый вопрос заменит.
+
+        В чате лежат только пары «вопрос — ответ», поэтому контекст всегда начинается с вопроса.
+        Заменяемую пару модель не видит.
+        """
+        if chat_id is None:
+            return [], []
+        if self._chats.get_chat(chat_id) is None:
+            raise ChatNotFound()
+        if not replace_last:
+            return self._chats.list_recent_messages(chat_id, self._context_messages), []
+
+        recent = self._chats.list_recent_messages(chat_id, self._context_messages + 2)
+        if len(recent) < 2:
+            raise ChatChanged()
+        return recent[:-2], recent[-2:]
 
     def _model_input(self, text: str, mode: str | None) -> str:
         """Новый вопрос в том виде, в каком его получит модель."""
         if mode != REVIEW:
             return as_model_input(text, mode)
-        mistakes = self._progress.mistakes(REVIEW_TASKS)
+        mistakes = self._mistakes.recent_mistakes(REVIEW_TASKS)
         if not mistakes:
             raise NothingToReview()
-        return review_request(text, [(attempt.topic, attempt.question) for attempt in mistakes])
+        return review_request(text, mistakes)
 
-    def _require(self, chat_id: int) -> Chat:
-        chat = self._chats.get_chat(chat_id)
-        if chat is None:
-            raise ChatNotFound()
-        return chat
+    def _stream_with_restart(self, turns: list[ChatTurn]) -> Generator[AnswerChunk | AnswerRestart, None, str]:
+        """Отдавать части ответа по мере генерации; вернуть ответ целиком.
+
+        Если ответ оборвался из-за временного сбоя, он один раз запрашивается заново.
+        Сбой до первой части не повторяем: клиент модели к этому моменту уже перебрал запасные модели.
+        """
+        restarts_left = RESTARTS
+        while True:
+            chunks: list[str] = []
+            try:
+                for chunk in self._llm.stream(SYSTEM_PROMPT, turns):
+                    chunks.append(chunk)
+                    yield AnswerChunk(chunk)
+            except LLMError as error:
+                if not chunks or not restarts_left or error.failure not in TRANSIENT:
+                    raise
+                restarts_left -= 1
+                logger.warning("Ответ оборвался (%s), запрашиваем заново", error)
+                yield AnswerRestart()
+                continue
+
+            answer = "".join(chunks).strip()
+            if not answer:
+                raise LLMError(LLMFailure.NO_ANSWER, "модель вернула пустой текст")
+            return answer

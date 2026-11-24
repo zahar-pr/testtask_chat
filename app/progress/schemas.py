@@ -12,7 +12,7 @@ class AttemptRequest(BaseModel):
     block: int = Field(ge=0, le=20)  # какой по счёту тренажёр в этом ответе
     task: int = Field(ge=0, le=50)  # номер задания в тренажёре
     topic: str = Field(min_length=1, max_length=120)
-    question: str = Field(min_length=1, max_length=1000)
+    question: str = Field(min_length=1, max_length=500)
     outcome: Outcome
 
 
@@ -40,6 +40,8 @@ class MistakeResponse(BaseModel):
 
 
 class ProgressResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     totals: TotalsResponse
     topics: list[TopicResponse]
     mistakes: list[MistakeResponse]

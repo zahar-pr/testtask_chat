@@ -68,14 +68,35 @@ def test_falls_back_to_next_model_when_primary_is_overloaded():
     assert asked == ["primary", "backup"]
 
 
-@pytest.mark.parametrize("ending", [[part(" и так да", finish="MAX_TOKENS")], []])
-def test_cut_off_answer_is_an_error_not_a_complete_answer(ending):
+@pytest.mark.parametrize(
+    ("ending", "failure"),
+    [
+        ([], LLMFailure.UNAVAILABLE),  # поток закрылся без причины — временный сбой, можно повторить
+        ([part(" и так да", finish="MAX_TOKENS")], LLMFailure.TRUNCATED),  # упёрлись в лимит длины
+        ([part(" про это", finish="SAFETY")], LLMFailure.BLOCKED),  # модель отказалась продолжать
+    ],
+)
+def test_incomplete_answer_is_an_error_that_says_why(ending, failure):
     def handler(request: httpx.Request) -> httpx.Response:
-        return sse(part("Начало ответа"), *ending)  # лимит токенов либо поток закрылся без STOP
+        return sse(part("Начало ответа"), *ending)
 
     with pytest.raises(LLMError) as caught:
         answer(make_client(handler, models=("only",)))
-    assert caught.value.failure is LLMFailure.UNAVAILABLE
+    assert caught.value.failure is failure
+
+
+def test_reports_which_model_answered():
+    answered = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "primary" in request.url.path:
+            return httpx.Response(503, json={"error": {"message": "overloaded"}})
+        return sse(part("раз"), part("два", finish="STOP"))
+
+    transport = httpx.Client(transport=httpx.MockTransport(handler))
+    client = GeminiClient("secret", ("primary", "backup"), http_client=transport, on_model=answered.append)
+    assert "".join(client.stream("p", TURNS)) == "раздва"
+    assert answered == ["backup"]  # один раз, когда модель начала отвечать
 
 
 def test_no_fallback_once_answer_has_started():
@@ -124,5 +145,5 @@ def test_timeout_and_blocked_answer():
 
     with pytest.raises(LLMError) as caught:
         answer(make_client(blocked))
-    assert caught.value.failure is LLMFailure.NO_ANSWER
+    assert caught.value.failure is LLMFailure.BLOCKED
     assert "SAFETY" in str(caught.value)

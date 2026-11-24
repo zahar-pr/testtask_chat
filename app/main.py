@@ -22,8 +22,10 @@ from app.db import Database
 from app.errors import register_error_handlers
 from app.llm.base import LLMClient
 from app.llm.gemini import GeminiClient
+from app.migrations import MIGRATIONS
 from app.progress.repository import ProgressRepository
 from app.progress.router import router as progress_router
+from app.progress.service import ProgressService
 from app.security import SameOriginMiddleware, SecurityHeadersMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -33,7 +35,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     settings = settings or get_settings()
 
     database = Database(settings.database_path)
-    database.migrate()
+    database.migrate(MIGRATIONS)
 
     gemini: GeminiClient | None = None
     if llm is None:
@@ -54,6 +56,10 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         title="Чат-помощник по математике", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
     )
 
+    # Сервисы собираются здесь один раз; маршруты достают их из app.state через зависимости.
+    chats = ChatRepository(database)
+    progress = ProgressService(ProgressRepository(database), find_message=chats.get_message)
+    app.state.settings = settings
     app.state.auth_service = AuthService(
         access_key=settings.access_key.get_secret_value(),
         sessions=SessionRepository(database),
@@ -62,24 +68,20 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.state.login_rate_limiter = LoginRateLimiter(
         max_attempts=settings.login_max_attempts, window_seconds=settings.login_window_seconds
     )
-    app.state.progress = ProgressRepository(database)
+    app.state.progress_service = progress
     app.state.chat_service = ChatService(
-        chats=ChatRepository(database),
-        llm=llm,
-        context_exchanges=settings.context_exchanges,
-        progress=app.state.progress,
+        chats=chats, llm=llm, context_exchanges=settings.context_exchanges, mistakes=progress
     )
 
     register_error_handlers(app)
     app.include_router(auth_router)
     app.include_router(chat_router)
     app.include_router(progress_router)
-
     app.add_middleware(SameOriginMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)  # добавлен последним — оборачивает все ответы, включая отказы
 
     @app.get("/api/health", include_in_schema=False)
-    def health() -> dict[str, str]:
+    async def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/", include_in_schema=False)

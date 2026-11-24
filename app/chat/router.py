@@ -12,9 +12,10 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.auth.dependencies import require_session
+from app.chat.errors import ModelFailed
 from app.chat.schemas import ChatListResponse, ExchangeResponse, HistoryResponse, MessageRequest
 from app.chat.service import AnswerChunk, AnswerRestart, ChatEvent, ChatService
-from app.errors import describe_llm_error
+from app.errors import AppError
 from app.llm.base import LLMError
 
 logger = logging.getLogger(__name__)
@@ -62,11 +63,15 @@ def _answer_stream(events: Iterator[ChatEvent]) -> StreamingResponse:
     - `delta` `{"text"}` — очередная часть ответа;
     - `reset` `{}` — ответ оборвался и запрошен заново: показанный текст нужно стереть;
     - `done` `{"chat", "user", "assistant"}` — пара сохранена в чат;
-    - `error` `{"code", "message"}` — ответ оборвался, в чат ничего не попало.
+    - `error` `{"code", "message"}` — ответа не будет, в чат ничего не попало.
     """
     # Первую часть ждём до отправки заголовков: если модель не ответила вовсе или чата нет,
-    # клиент получит обычную ошибку с HTTP-статусом (её вернёт общий обработчик), а не «успешный» поток.
-    first = next(events)
+    # клиент получит обычную ошибку с HTTP-статусом, а не «успешный» поток.
+    try:
+        first = next(events)
+    except LLMError as error:
+        logger.warning("Модель не ответила (%s): %s", error.failure.value, error)
+        raise ModelFailed(error) from error
     return StreamingResponse(
         _to_sse(chain([first], events)),
         status_code=status.HTTP_201_CREATED,
@@ -77,6 +82,7 @@ def _answer_stream(events: Iterator[ChatEvent]) -> StreamingResponse:
 
 
 def _to_sse(events: Iterator[ChatEvent]) -> Iterator[str]:
+    """Заголовки уже ушли, поэтому любая ошибка отсюда сообщается событием `error`, а не статусом."""
     try:
         for event in events:
             if isinstance(event, AnswerChunk):
@@ -87,8 +93,16 @@ def _to_sse(events: Iterator[ChatEvent]) -> Iterator[str]:
                 yield _sse("done", ExchangeResponse.model_validate(event).model_dump(mode="json"))
     except LLMError as error:
         logger.warning("Ответ модели оборвался (%s): %s", error.failure.value, error)
-        _, code, message = describe_llm_error(error)
-        yield _sse("error", {"code": code, "message": message})
+        yield _error_event(ModelFailed(error))
+    except AppError as error:  # например, чат удалили в другой вкладке, пока шёл ответ
+        yield _error_event(error)
+    except Exception:
+        logger.exception("Сбой при выдаче ответа")
+        yield _error_event(AppError())
+
+
+def _error_event(error: AppError) -> str:
+    return _sse("error", {"code": error.code, "message": error.message})
 
 
 def _sse(event: str, data: dict) -> str:

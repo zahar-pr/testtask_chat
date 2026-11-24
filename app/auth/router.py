@@ -9,14 +9,14 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from app.auth.dependencies import (
     SESSION_COOKIE,
     SessionToken,
+    cookie_must_be_secure,
     get_auth_service,
     get_login_rate_limiter,
 )
+from app.auth.errors import TooManyLoginAttempts
 from app.auth.rate_limit import LoginRateLimiter
 from app.auth.schemas import LoginRequest
 from app.auth.service import AuthService
-from app.clock import utc_now
-from app.errors import InvalidAccessKey, TooManyLoginAttempts
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -30,27 +30,26 @@ def login(
     response: Response,
     auth: Auth,
     limiter: Annotated[LoginRateLimiter, Depends(get_login_rate_limiter)],
+    secure: Annotated[bool, Depends(cookie_must_be_secure)],
 ) -> None:
+    # Адрес клиента берётся из соединения; за обратным прокси его подставляет uvicorn
+    # из X-Forwarded-For — но только от прокси из списка TRUSTED_PROXIES.
     client = request.client.host if request.client else "unknown"
-    if retry_after := limiter.retry_after(client):
-        raise TooManyLoginAttempts(retry_after)
+    if wait_seconds := limiter.attempt(client):
+        raise TooManyLoginAttempts(wait_seconds)
 
-    try:
-        session = auth.login(payload.access_key)
-    except InvalidAccessKey:
-        limiter.record_failure(client)
-        raise
-    limiter.reset(client)
+    session = auth.login(payload.access_key)  # неверный ключ — InvalidAccessKey, попытка уже учтена
+    limiter.forgive(client)
 
     # Ключ доступа в браузере не остаётся: дальше запросы подтверждает случайный токен сессии
     # в cookie, недоступной для JavaScript (HttpOnly) и для чужих сайтов (SameSite=Strict).
     response.set_cookie(
         SESSION_COOKIE,
         session.token,
-        max_age=round((session.expires_at - utc_now()).total_seconds()),
+        max_age=session.max_age_seconds,
         httponly=True,
         samesite="strict",
-        secure=request.url.scheme == "https",
+        secure=secure,
         path="/",
     )
 

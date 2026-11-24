@@ -7,7 +7,8 @@ from fastapi.testclient import TestClient
 
 from app.llm.base import LLMError, LLMFailure
 from app.main import create_app
-from tests.conftest import ACCESS_KEY, ask, done, sse_events
+from app.migrations import MIGRATIONS
+from tests.helpers import ACCESS_KEY, ask, done, sse_events
 
 
 def chats(client) -> list[dict]:
@@ -184,6 +185,39 @@ def test_failed_replacement_keeps_the_old_pair(authed, llm):
     assert history(authed, old["chat"]["id"]) == [old["user"], old["assistant"]]
 
 
+def test_replacement_is_refused_if_the_chat_moved_on_meanwhile(authed, llm):
+    """Пока шёл новый ответ, в чат (из другой вкладки) дописали пару — замена не должна стереть её."""
+    chat_id = done(ask(authed, "первый"))["chat"]["id"]
+    llm.midway = lambda: (setattr(llm, "midway", None), ask(authed, "из другой вкладки", chat_id))
+
+    events = sse_events(ask(authed, "первый, исправленный", chat_id, replace_last=True))
+
+    assert events[-1] == ("error", {"code": "chat_changed", "message": events[-1][1]["message"]})
+    assert [m["text"] for m in history(authed, chat_id) if m["role"] == "user"] == ["первый", "из другой вкладки"]
+
+
+def test_chat_deleted_during_the_answer_ends_with_a_clear_error(authed, llm):
+    chat_id = done(ask(authed, "вопрос"))["chat"]["id"]
+    llm.midway = lambda: authed.delete(f"/api/chats/{chat_id}")
+
+    events = sse_events(ask(authed, "ещё вопрос", chat_id))
+
+    assert events[-1][0] == "error" and events[-1][1]["code"] == "chat_not_found"
+    assert chats(authed) == []
+
+
+def test_unexpected_failure_during_the_answer_is_reported_without_details(authed, llm):
+    def explode() -> None:
+        raise RuntimeError("database is locked")
+
+    llm.midway = explode
+    events = sse_events(ask(authed, "вопрос"))
+
+    assert events[-1][0] == "error" and events[-1][1]["code"] == "internal_error"
+    assert "locked" not in events[-1][1]["message"]
+    assert chats(authed) == []
+
+
 # --- Заготовки ---
 
 
@@ -232,6 +266,13 @@ def test_database_from_single_chat_version_becomes_a_saved_chat(settings, llm):
     again = TestClient(create_app(settings, llm))
     again.cookies.set("session", client.cookies.get("session"))
     assert [c["id"] for c in chats(again)] == [chat["id"]]
+    assert len(history(again, chat["id"])) == 4
+
+    # после обновления схемы сообщения удаляются вместе с чатом
+    assert again.delete(f"/api/chats/{chat['id']}").status_code == 204
+    database = sqlite3.connect(settings.database_path)
+    assert database.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0
+    assert database.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
 
 
 def test_index_and_security_headers(client, authed):

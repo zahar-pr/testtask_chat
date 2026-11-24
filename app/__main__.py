@@ -20,7 +20,16 @@ def main() -> None:
         )
         sys.exit(f"Не хватает настроек или они заданы неверно (см. .env.example):\n{problems}")
 
-    uvicorn.run("app.main:create_app", factory=True, host=settings.host, port=settings.port)
+    uvicorn.run(
+        "app.main:create_app",
+        factory=True,
+        host=settings.host,
+        port=settings.port,
+        # Заголовкам X-Forwarded-* верим только от перечисленных прокси: иначе клиент мог бы
+        # подделать свой адрес и обойти ограничение попыток входа.
+        proxy_headers=True,
+        forwarded_allow_ips=settings.trusted_proxies,
+    )
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
-"""Ограничение перебора ключа: не больше N неудачных попыток с одного адреса за окно времени."""
+"""Ограничение перебора ключа: не больше N попыток входа с одного адреса за окно времени."""
 
 from __future__ import annotations
 
 import math
 import threading
 import time
-from collections import defaultdict, deque
+from collections import deque
 from collections.abc import Callable
 
 
@@ -18,28 +18,30 @@ class LoginRateLimiter:
         self._max_attempts = max_attempts
         self._window = window_seconds
         self._timer = timer
-        self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self._attempts: dict[str, deque[float]] = {}
         self._lock = threading.Lock()
 
-    def retry_after(self, client: str) -> int:
-        """Сколько секунд клиенту нужно подождать; 0 — можно пробовать."""
-        with self._lock:
-            failures = self._recent(client)
-            if len(failures) < self._max_attempts:
-                return 0
-            return max(1, math.ceil(failures[0] + self._window - self._timer()))
+    def attempt(self, client: str) -> int:
+        """Учесть попытку входа. 0 — попытка разрешена; иначе — сколько секунд клиенту ждать.
 
-    def record_failure(self, client: str) -> None:
+        Проверка и учёт — одно действие под одним замком: параллельные запросы не могут
+        все разом «проскочить» мимо лимита.
+        """
         with self._lock:
-            self._recent(client).append(self._timer())
+            now = self._timer()
+            attempts = self._attempts.get(client)
+            if attempts is not None:
+                while attempts and attempts[0] <= now - self._window:
+                    attempts.popleft()
+                if not attempts:  # окно истекло — запись об адресе больше не нужна
+                    del self._attempts[client]
+                    attempts = None
+            if attempts is not None and len(attempts) >= self._max_attempts:
+                return max(1, math.ceil(attempts[0] + self._window - now))
+            self._attempts.setdefault(client, deque()).append(now)
+            return 0
 
-    def reset(self, client: str) -> None:
+    def forgive(self, client: str) -> None:
+        """Вход удался — попытки этого адреса больше не считаются."""
         with self._lock:
-            self._failures.pop(client, None)
-
-    def _recent(self, client: str) -> deque[float]:
-        failures = self._failures[client]
-        threshold = self._timer() - self._window
-        while failures and failures[0] <= threshold:
-            failures.popleft()
-        return failures
+            self._attempts.pop(client, None)

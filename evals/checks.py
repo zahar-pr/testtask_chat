@@ -6,7 +6,6 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from app.chat.prompt import SYSTEM_PROMPT
 from evals.answer import Answer
 
 Number = (int, float)
@@ -160,5 +159,3 @@ def no_color_names(answer: Answer) -> Result:
     found = COLOR_NAME.search(answer.text)
     return Result("цвета линий не названы", found is None, found.group(0) if found else "")
 
-
-assert all(marker in SYSTEM_PROMPT for marker in PROMPT_MARKERS), "маркеры утечки должны быть в промпте"

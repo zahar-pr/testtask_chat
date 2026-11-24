@@ -2,19 +2,14 @@
 
 from __future__ import annotations
 
-import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Единые правила для ключа доступа: их же проверяет форма входа на фронтенде.
-ACCESS_KEY_MIN_LENGTH = 8
-ACCESS_KEY_MAX_LENGTH = 255
-ACCESS_KEY_PATTERN = r"^[A-Za-z0-9_-]+$"
-
-MESSAGE_MAX_LENGTH = 500
+from app.auth.rules import access_key_problem
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -27,12 +22,20 @@ class Settings(BaseSettings):
     session_ttl_hours: int = Field(default=24 * 7, ge=1)
     login_max_attempts: int = Field(default=5, ge=1)
     login_window_seconds: int = Field(default=300, ge=1)
+    # Флаг Secure у cookie сессии: auto — если запрос пришёл по HTTPS; always — всегда
+    # (когда HTTPS завершается на прокси, который не передаёт X-Forwarded-Proto); never — никогда.
+    cookie_secure: Literal["auto", "always", "never"] = "auto"
+    # Адреса обратных прокси, которым можно верить в X-Forwarded-For и X-Forwarded-Proto.
+    # От этого зависят адрес клиента в ограничителе попыток входа и схема запроса. «*» — верить всем.
+    trusted_proxies: str = "127.0.0.1"
 
     # --- Языковая модель ---
     gemini_api_key: SecretStr
-    gemini_model: str = "gemini-3.5-flash"
+    # По умолчанию — быстрая модель с большой бесплатной квотой. gemini-3.5-flash отвечает
+    # точнее, но на бесплатном тарифе ограничена 20 запросами в сутки.
+    gemini_model: str = "gemini-3.5-flash-lite"
     # Запасные модели через запятую: к ним идём, если основная перегружена или недоступна.
-    gemini_fallback_models: str = "gemini-3.5-flash-lite,gemini-3.1-flash-lite"
+    gemini_fallback_models: str = "gemini-3.1-flash-lite,gemini-3.5-flash"
     gemini_timeout_seconds: float = Field(default=20, gt=0)
     # Сколько предыдущих пар «вопрос — ответ» передавать модели как контекст (0 — без контекста).
     context_exchanges: int = Field(default=5, ge=0, le=50)
@@ -45,13 +48,8 @@ class Settings(BaseSettings):
     @field_validator("access_key")
     @classmethod
     def _check_access_key(cls, value: SecretStr) -> SecretStr:
-        key = value.get_secret_value()
-        if not ACCESS_KEY_MIN_LENGTH <= len(key) <= ACCESS_KEY_MAX_LENGTH:
-            raise ValueError(
-                f"длина должна быть от {ACCESS_KEY_MIN_LENGTH} до {ACCESS_KEY_MAX_LENGTH} символов"
-            )
-        if not re.fullmatch(ACCESS_KEY_PATTERN, key):
-            raise ValueError("допустимы только латинские буквы, цифры, дефис и подчёркивание")
+        if problem := access_key_problem(value.get_secret_value()):
+            raise ValueError(problem)
         return value
 
     @field_validator("gemini_api_key")

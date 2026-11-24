@@ -6,7 +6,8 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.chat.modes import ModeId
-from app.config import MESSAGE_MAX_LENGTH
+
+MESSAGE_MAX_LENGTH = 500  # то же ограничение показывает счётчик под полем ввода (static/js/validation.js)
 
 
 class MessageRequest(BaseModel):
