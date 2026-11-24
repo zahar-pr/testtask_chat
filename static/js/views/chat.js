@@ -5,6 +5,7 @@ import { $, el } from '../dom.js';
 import { DEFAULT_FOLLOWUPS, MODES, modeById } from '../modes.js';
 import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
+import { findMath, renderMathText } from '../render/mathtext.js';
 import { stablePart } from '../render/streaming.js';
 import { MESSAGE, checkMessage } from '../validation.js';
 import { createSidebar } from './sidebar.js';
@@ -39,6 +40,9 @@ export function createChatView({ onSessionLost, onLogout }) {
   const counter = $('#message-counter');
   const sendButton = $('#send-button');
   const stopButton = $('#stop-button');
+  const preview = $('#input-preview');
+  const symbols = $('#symbols');
+  const symbolsToggle = $('#symbols-toggle');
   const editBanner = $('#edit-banner');
   const editCancel = $('#edit-cancel');
   const clearButton = $('#clear-button');
@@ -67,6 +71,7 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   function refresh() {
     const check = checkMessage(input.value);
+    refreshPreview();
     counter.textContent = `${check.length} / ${MESSAGE.max}`;
     counter.classList.toggle('is-over', check.over);
 
@@ -87,6 +92,13 @@ export function createChatView({ onSessionLost, onLogout }) {
   function autosize() {
     input.style.height = 'auto';
     input.style.height = `${input.scrollHeight}px`;
+  }
+
+  /** Предпросмотр: если в набранном тексте есть формулы, показываем, как они будут выглядеть. */
+  function refreshPreview() {
+    const formulas = findMath(input.value);
+    preview.hidden = formulas.length === 0;
+    preview.replaceChildren(formulas.length ? renderMathText(input.value, formulas) : '');
   }
 
   function setStatus(...content) {
@@ -112,7 +124,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     return el('article', { class: 'message message--user' },
       el('div', { class: 'message__main' },
         usedMode ? el('div', { class: 'message__mode' }, usedMode.title) : '',
-        el('div', { class: 'message__text' }, text),
+        el('div', { class: 'message__text' }, renderMathText(text)), // формулы из вопроса — в настоящей записи
         el('div', { class: 'message__meta' }, meta),
       ),
     );
@@ -526,6 +538,49 @@ export function createChatView({ onSessionLost, onLogout }) {
     autosize();
     send(text);
   });
+
+  // --- Кнопки математических символов ---
+
+  // caret — на сколько символов от конца вставки отступить курсору: sqrt(|)
+  const SYMBOLS = [
+    { label: 'x²', insert: '^2', title: 'Квадрат' },
+    { label: 'xⁿ', insert: '^', title: 'Степень' },
+    { label: '√', insert: 'sqrt()', caret: 1, title: 'Корень' },
+    { label: 'a/b', insert: '/', title: 'Дробь' },
+    { label: '( )', insert: '()', caret: 1, title: 'Скобки' },
+    { label: 'π', insert: 'π', title: 'Число пи' },
+    { label: '≤', insert: ' ≤ ' }, { label: '≥', insert: ' ≥ ' }, { label: '≠', insert: ' ≠ ' },
+    { label: '∞', insert: '∞', title: 'Бесконечность' },
+  ];
+
+  function insertAtCursor({ insert, caret = 0 }) {
+    const { selectionStart: start, selectionEnd: end, value } = input;
+    input.value = value.slice(0, start) + insert + value.slice(end);
+    const position = start + insert.length - caret;
+    input.setSelectionRange(position, position);
+    input.focus();
+    autosize();
+    refresh();
+  }
+
+  function setSymbolsShown(shown) {
+    symbols.hidden = !shown;
+    symbolsToggle.setAttribute('aria-pressed', String(shown));
+    symbolsToggle.classList.toggle('is-active', shown);
+    try {
+      localStorage.setItem('epsilon.symbols', shown ? '1' : '0'); // запоминаем выбор, не более
+    } catch { /* хранилище недоступно — просто не запомним */ }
+  }
+
+  for (const symbol of SYMBOLS) {
+    const button = el('button', { type: 'button', class: 'composer__symbol', title: symbol.title ?? null }, symbol.label);
+    button.addEventListener('click', () => insertAtCursor(symbol));
+    symbols.append(button);
+  }
+  symbolsToggle.addEventListener('click', () => setSymbolsShown(symbols.hidden));
+  try {
+    setSymbolsShown(localStorage.getItem('epsilon.symbols') === '1');
+  } catch { /* без хранилища панель просто скрыта */ }
 
   stopButton.addEventListener('click', () => abort?.abort());
   editCancel.addEventListener('click', () => {

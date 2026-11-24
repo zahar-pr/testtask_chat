@@ -162,6 +162,25 @@
   font-size: 12.5px;
 }
 .composer__banner .button { color: inherit; }
+/* Предпросмотр: как набранные формулы будут выглядеть */
+.composer__preview {
+  margin: 0 4px 10px 0; padding: 0 0 10px; border-bottom: 1px dashed var(--line-strong);
+  color: var(--ink-soft); line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: 120px; overflow-y: auto;
+}
+.composer__preview .katex { font-size: 1.16em; color: var(--ink); }
+.message--user .katex { font-size: 1.12em; }
+
+/* Кнопки математических символов */
+.composer__symbols { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0 2px; }
+.composer__symbol {
+  min-width: 36px; height: 30px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--radius-s);
+  background: var(--surface-sunken); cursor: pointer; font-size: 13px;
+  transition: border-color .15s, background-color .15s;
+}
+.composer__symbol:hover { border-color: var(--accent); background: var(--accent-soft); }
+.composer__symbols-toggle { flex: none; padding: 0 10px; font-weight: 600; }
 .composer__stop { flex: none; gap: 6px; }
 .composer__stop .icon { width: 16px; height: 16px; fill: currentColor; stroke: none; }
 .composer__input {

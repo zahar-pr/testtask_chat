@@ -112,10 +112,13 @@
           <span>Вы меняете последний вопрос — ответ на него будет заменён.</span>
           <button type="button" id="edit-cancel" class="button button--ghost button--small">Отмена</button>
         </div>
+        <div id="input-preview" class="composer__preview" aria-live="polite" hidden></div>
         <label class="visually-hidden" for="message-input">Сообщение</label>
         <textarea id="message-input" class="composer__input" rows="1"
                   placeholder="Спросите что-нибудь о математике…" aria-describedby="message-counter" enterkeyhint="send"></textarea>
+        <div id="symbols" class="composer__symbols" role="toolbar" aria-label="Математические символы" hidden></div>
         <div class="composer__bar">
+          <button type="button" id="symbols-toggle" class="mode__button composer__symbols-toggle" aria-pressed="false" aria-controls="symbols" title="Математические символы">√x</button>
           <div class="mode">
             <button type="button" id="mode-button" class="mode__button" aria-haspopup="menu" aria-expanded="false" aria-controls="mode-menu">
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v7H4zM13 5h7v4h-7zM13 12h7v7h-7zM4 15h7v4H4z"/></svg>
