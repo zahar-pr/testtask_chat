@@ -1,0 +1,64 @@
+# Проверки при каждом изменении: линтер и тесты бэкенда, тесты JS-кода интерфейса,
+# сквозные тесты в браузере (с подставной моделью), сборка и запуск Docker-образа.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:  # кнопка «Run workflow» на вкладке Actions — запуск вручную
+
+jobs:
+  backend:
+    name: Бэкенд (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: python -m pytest --ignore=tests/e2e
+
+  frontend:
+    name: Интерфейс (тесты JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+
+  e2e:
+    name: Сквозные тесты в браузере
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements-e2e.txt
+      - run: playwright install --with-deps chromium
+      - run: python -m pytest tests/e2e
+
+  docker:
+    name: Сборка Docker-образа
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t math-chat .
+      - name: Образ запускается и отвечает
+        run: |
+          docker run -d --name math-chat -p 8000:8000 -e ACCESS_KEY=ci-access-key -e GEMINI_API_KEY=unused math-chat
+          for attempt in $(seq 1 20); do
+            curl -fs http://127.0.0.1:8000/api/health && exit 0
+            sleep 1
+          done
+          docker logs math-chat
+          exit 1
