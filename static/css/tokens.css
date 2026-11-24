@@ -1,0 +1,61 @@
+/* Дизайн-токены: цвета, шрифты, размеры. Тёмная тема — по настройке системы. */
+:root {
+  --bg: #f6f5f1;
+  --surface: #ffffff;
+  --surface-sunken: #efede7;
+  --ink: #1d1c1a;
+  --ink-soft: #5d5a54;
+  --ink-faint: #8d8a83;
+  --line: #e3e0d8;
+  --line-strong: #cfcbc1;
+  --grid: rgba(47, 79, 216, 0.07);
+
+  --accent: #2f4fd8;
+  --accent-hover: #2742b8;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8ecfb;
+  --accent-soft-ink: #1c2a6b;
+
+  --danger: #b93a2b;
+  --danger-hover: #9d2f22;
+  --danger-soft: #fbeae7;
+
+  --shadow-card: 0 1px 2px rgba(29, 28, 26, 0.04), 0 12px 40px rgba(29, 28, 26, 0.08);
+  --shadow-float: 0 1px 2px rgba(29, 28, 26, 0.05), 0 6px 24px rgba(29, 28, 26, 0.07);
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-math: KaTeX_Math, "Times New Roman", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --radius-s: 8px;
+  --radius-m: 14px;
+  --radius-l: 22px;
+  --column: 760px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151514;
+    --surface: #1f1f1d;
+    --surface-sunken: #262624;
+    --ink: #edebe6;
+    --ink-soft: #b1aea6;
+    --ink-faint: #85827b;
+    --line: #2f2e2b;
+    --line-strong: #43413d;
+    --grid: rgba(142, 162, 255, 0.06);
+
+    --accent: #8da0ff;
+    --accent-hover: #a5b4ff;
+    --accent-ink: #10152e;
+    --accent-soft: #262d50;
+    --accent-soft-ink: #dfe4ff;
+
+    --danger: #ff8d7e;
+    --danger-hover: #ffa598;
+    --danger-soft: #3a211e;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
+    --shadow-float: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 24px rgba(0, 0, 0, 0.3);
+  }
+}

@@ -1,0 +1,73 @@
+/* Экран входа: карточка на «тетрадном» фоне в клетку. */
+.login {
+  min-height: 100vh; min-height: 100dvh;
+  display: grid; place-items: center;
+  padding: 24px 16px;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  background-position: center;
+}
+
+.login__card {
+  width: 100%; max-width: 400px;
+  padding: 36px 32px 32px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-card);
+}
+
+.login__title { margin-top: 20px; font-size: 28px; line-height: 1.2; letter-spacing: -0.01em; }
+.login__lead { margin-top: 8px; color: var(--ink-soft); }
+
+.login__notice {
+  margin-top: 20px; padding: 10px 12px;
+  border-radius: var(--radius-s);
+  background: var(--accent-soft); color: var(--accent-soft-ink);
+  font-size: 14px;
+}
+
+.field__label { display: block; margin: 28px 0 8px; font-size: 14px; font-weight: 600; }
+
+.field {
+  display: flex; align-items: center;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-s);
+  background: var(--surface);
+  transition: border-color .15s, box-shadow .15s;
+}
+.field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field.is-invalid { border-color: var(--danger); }
+.field.is-invalid:focus-within { box-shadow: 0 0 0 3px var(--danger-soft); }
+.field.is-shaking { animation: shake .35s; }
+
+.field__input {
+  flex: 1; min-width: 0; height: 46px; padding: 0 0 0 14px;
+  border: 0; background: none; outline: none;
+  font-family: var(--font-mono); font-size: 15px; letter-spacing: .02em;
+}
+.field__input::placeholder { color: var(--ink-faint); font-family: var(--font-ui); letter-spacing: 0; }
+
+.field__toggle {
+  display: grid; place-items: center;
+  width: 44px; height: 44px; margin-right: 1px;
+  border: 0; border-radius: var(--radius-s); background: none;
+  color: var(--ink-faint); cursor: pointer;
+}
+.field__toggle:hover { color: var(--ink); }
+.field__toggle .icon--eye-off, .field__toggle[aria-pressed="true"] .icon--eye { display: none; }
+.field__toggle[aria-pressed="true"] .icon--eye-off { display: block; }
+
+/* Высота зарезервирована под две строки, чтобы карточка не «прыгала» при смене подсказки. */
+.field__hint { min-height: 40px; margin: 8px 0 20px; font-size: 13px; line-height: 20px; color: var(--ink-faint); }
+.field__hint.is-error { color: var(--danger); }
+
+@keyframes shake {
+  20%, 60% { transform: translateX(-5px); }
+  40%, 80% { transform: translateX(5px); }
+}
+
+@media (max-width: 440px) {
+  .login__card { padding: 28px 20px 24px; }
+}

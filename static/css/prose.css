@@ -1,0 +1,48 @@
+/* Текст ответа модели: абзацы, списки, формулы. */
+.prose { overflow-wrap: break-word; line-height: 1.65; }
+.prose > :first-child { margin-top: 0; }
+.prose > :last-child { margin-bottom: 0; }
+
+.prose p { margin: .7em 0; }
+.prose h3, .prose h4 { margin: 1.2em 0 .4em; font-size: 1.05em; line-height: 1.35; }
+.prose h3 { font-size: 1.15em; }
+.prose strong { font-weight: 650; }
+.prose a { color: var(--accent); }
+.prose hr { margin: 1.2em 0; border: 0; border-top: 1px solid var(--line); }
+.prose blockquote { margin: .8em 0; padding-left: 14px; border-left: 3px solid var(--line-strong); color: var(--ink-soft); }
+
+.prose ul, .prose ol { margin: .7em 0; padding-left: 1.5em; }
+.prose li { margin: .35em 0; padding-left: .2em; }
+.prose li::marker { color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.prose li > p { margin: .35em 0; }
+.prose li > :first-child { margin-top: 0; }
+.prose li > :last-child { margin-bottom: 0; }
+
+.prose code {
+  padding: .1em .35em; border-radius: 5px;
+  background: var(--surface-sunken); font: .9em var(--font-mono);
+}
+.prose pre {
+  margin: .8em 0; padding: 12px 14px; overflow-x: auto;
+  border-radius: var(--radius-s); background: var(--surface-sunken);
+  font: 14px/1.5 var(--font-mono);
+}
+.prose pre code { padding: 0; background: none; font-size: inherit; }
+
+/* Формулы. Длинная выкладка прокручивается сама, не ломая ширину ленты. */
+.prose .katex { font-size: 1.1em; }
+.math-display {
+  display: block; margin: .8em 0; padding: 4px 2px;
+  overflow-x: auto; overflow-y: hidden; text-align: center;
+  scrollbar-width: thin;
+}
+.math-display > .katex-display { margin: 0; }
+.math-display > .katex-display > .katex { font-size: 1.16em; }
+.math-error { font: .9em var(--font-mono); color: var(--ink-soft); white-space: pre-wrap; text-align: left; }
+
+.suggestion .katex { font-size: 1.05em; }
+
+@media (max-width: 600px) {
+  /* На телефоне выкладки чуть мельче, чтобы реже приходилось прокручивать их вбок. */
+  .math-display > .katex-display > .katex { font-size: 1.02em; }
+}
