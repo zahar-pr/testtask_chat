@@ -47,8 +47,7 @@
 
 /* --- Приветствие в пустом чате --- */
 .welcome { margin: auto 0; padding: 16px 0 32px; text-align: center; }
-.welcome .logo { margin: 0 auto; }
-.welcome__title { margin-top: 20px; font-size: 28px; font-weight: 700; line-height: 1.25; }
+.welcome__title { margin-top: 0; font-size: 28px; font-weight: 700; line-height: 1.25; }
 .welcome__lead { max-width: 560px; margin: 10px auto 0; color: var(--ink-soft); }
 /* Заготовки: карточки режимов на пустом экране */
 .presets {
@@ -109,8 +108,7 @@
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 
-.message--assistant .message__main { flex: 1; padding-top: 5px; }
-.message--assistant .logo { width: 32px; height: 32px; border-radius: 10px; font-size: 23px; }
+.message--assistant .message__main { flex: 1; }
 
 /* Отправляется / не отправилось */
 .message.is-sending .message__text { opacity: .65; }
@@ -227,10 +225,6 @@
   .welcome { padding-bottom: 16px; }
   .welcome__title { font-size: 22px; }
   .message--user .message__main { max-width: 88%; }
-  /* На узком экране значок уходит над ответом: формулам нужна вся ширина. */
-  .message--assistant { flex-direction: column; gap: 8px; }
-  .message--assistant .message__main { padding-top: 0; width: 100%; }
-  .message--assistant .logo { width: 28px; height: 28px; border-radius: 9px; font-size: 20px; }
   .chat__column { padding-top: 16px; }
 }
 @media (hover: none) {

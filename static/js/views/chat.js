@@ -112,7 +112,6 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   function assistantMessage(content, meta) {
     return el('article', { class: 'message message--assistant' },
-      el('div', { class: 'logo', 'aria-hidden': 'true' }, 'ε'),
       el('div', { class: 'message__main' }, content, meta ? el('div', { class: 'message__meta' }, meta) : ''),
     );
   }

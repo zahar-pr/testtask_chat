@@ -19,7 +19,7 @@
   box-shadow: var(--shadow-card);
 }
 
-.login__title { margin-top: 20px; font-size: 30px; font-weight: 700; line-height: 1.2; }
+.login__title { margin-top: 0; font-size: 30px; font-weight: 700; line-height: 1.2; }
 .login__lead { margin-top: 8px; color: var(--ink-soft); }
 
 .login__notice {

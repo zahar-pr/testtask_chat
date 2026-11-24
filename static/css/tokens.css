@@ -27,7 +27,6 @@
      и открытые формы, но пропорциональный и плотный, поэтому заголовок сразу отличим от текста. */
   --font-text: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --font-heading: "Geologica", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-math: KaTeX_Math, "Times New Roman", Georgia, serif;
 
   /* Палитра графиков: порядок фиксирован, соседние цвета различимы и при нарушениях
      цветового зрения (проверено валидатором для светлой и тёмной поверхности). */

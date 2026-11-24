@@ -26,19 +26,6 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .noscript { padding: 24px; text-align: center; }
 
-/* --- Логотип --- */
-.logo {
-  flex: none;
-  display: grid; place-items: center;
-  width: 36px; height: 36px;
-  border-radius: 11px;
-  background: var(--accent); color: var(--accent-ink);
-  font: italic 26px/1 var(--font-math);
-  padding-bottom: 3px;
-  user-select: none;
-}
-.logo--large { width: 60px; height: 60px; border-radius: 18px; font-size: 44px; padding-bottom: 5px; }
-
 /* --- Иконки --- */
 .icon {
   width: 20px; height: 20px; flex: none;
