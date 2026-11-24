@@ -82,6 +82,11 @@ export const listChats = async () => (await request('GET', '/api/chats')).chats;
 export const listMessages = async (chatId) => (await request('GET', `/api/chats/${chatId}/messages`)).messages;
 export const deleteChat = (chatId) => request('DELETE', `/api/chats/${chatId}`);
 
+// Прогресс: результаты заданий тренажёров
+export const saveAttempt = (attempt) => request('POST', '/api/progress/attempts', attempt);
+export const getProgress = () => request('GET', '/api/progress');
+export const resetProgress = () => request('DELETE', '/api/progress');
+
 /**
  * Отправить вопрос в чат chatId (null — начать новый чат).
  *   mode        — заготовка или null;

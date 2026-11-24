@@ -52,6 +52,12 @@ class NothingToReplace(AppError):
     message = "В этом чате ещё нет вопроса, который можно заменить."
 
 
+class NothingToReview(AppError):
+    status_code = 409
+    code = "nothing_to_review"
+    message = "Ошибок пока нет: сначала пройдите тренажёр."
+
+
 class TooManyLoginAttempts(AppError):
     status_code = 429
     code = "too_many_attempts"

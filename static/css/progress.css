@@ -1,0 +1,31 @@
+/* «Мой прогресс»: сводка по тренажёрам. */
+.dialog--wide { width: min(620px, calc(100vw - 32px)); max-height: min(86vh, 760px); }
+.dialog--wide .dialog__body { display: flex; flex-direction: column; max-height: inherit; }
+.progress { margin-top: 16px; overflow-y: auto; }
+.progress__empty { color: var(--ink-soft); }
+.progress__reset { margin-right: auto; }
+.progress__heading { margin: 22px 0 10px; font-size: 15px; font-weight: 650; }
+
+/* Три главных числа */
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-m); }
+.stat__value { font: 700 26px/1.2 var(--font-heading); letter-spacing: -0.01em; }
+.stat__label { margin-top: 2px; font-size: 12px; color: var(--ink-soft); }
+
+/* Темы: доля заданий, решённых с первой попытки */
+.progress__topics, .progress__mistakes { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.progress__topic { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(60px, 1fr) max-content; align-items: center; gap: 12px; font-size: 13.5px; }
+.progress__topic-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress__topic-score { font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.progress__bar { height: 6px; border-radius: 3px; background: var(--surface-sunken); overflow: hidden; }
+.progress__bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--good); }
+
+.progress__mistake { padding: 9px 12px; border-radius: var(--radius-s); background: var(--surface-sunken); font-size: 13.5px; }
+.progress__mistake-meta { margin-top: 2px; font-size: 12px; color: var(--ink-faint); }
+.progress .katex { font-size: 1.1em; }
+
+@media (max-width: 480px) {
+  .stat { padding: 10px; }
+  .stat__value { font-size: 21px; }
+  .dialog--wide .dialog__actions { flex-wrap: wrap; }
+}

@@ -17,6 +17,7 @@
   <link rel="stylesheet" href="/static/css/chat.css">
   <link rel="stylesheet" href="/static/css/prose.css">
   <link rel="stylesheet" href="/static/css/widgets.css">
+  <link rel="stylesheet" href="/static/css/progress.css">
   <script defer src="/static/vendor/katex/katex.min.js"></script>
   <script type="module" src="/static/js/main.js"></script>
 </head>
@@ -61,6 +62,10 @@
       <h2 class="sidebar__heading">Сохранённые чаты</h2>
       <ul id="chat-list" class="sidebar__list"></ul>
       <p id="chat-list-empty" class="sidebar__empty">Здесь появятся ваши чаты — они сохраняются сами.</p>
+      <button type="button" id="progress-button" class="button button--ghost sidebar__progress">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
+        <span class="button__label">Мой прогресс</span>
+      </button>
     </aside>
     <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
 
@@ -144,6 +149,18 @@
     </footer>
     </div>
   </div>
+
+  <dialog id="progress-dialog" class="dialog dialog--wide" aria-labelledby="progress-title">
+    <div class="dialog__body">
+      <h2 id="progress-title" class="dialog__title">Мой прогресс</h2>
+      <div id="progress-content" class="progress"></div>
+      <div class="dialog__actions">
+        <button type="button" id="progress-reset" class="button button--ghost progress__reset">Сбросить</button>
+        <button type="button" id="progress-close" class="button button--secondary">Закрыть</button>
+        <button type="button" id="progress-review" class="button button--primary">Потренировать ошибки</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="clear-dialog" class="dialog" aria-labelledby="clear-dialog-title">
     <form method="dialog" class="dialog__body">

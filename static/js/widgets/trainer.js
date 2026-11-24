@@ -71,8 +71,12 @@ function sameNumbers(given, expected, tolerance) {
   return true;
 }
 
+/**
+ * context.onResult — необязательный обработчик: вызывается, когда задание завершено,
+ * с { task, question, topic, outcome }. Так результаты попадают в «Мой прогресс».
+ */
 export function createTrainer(spec, context) {
-  const { renderBlock, renderInline } = context;
+  const { renderBlock, renderInline, onResult } = context;
   const { title, tasks } = normalize(spec);
 
   // Итог по каждому заданию: 'first' — верно с первой попытки, 'solved' — верно не сразу,
@@ -123,6 +127,7 @@ export function createTrainer(spec, context) {
     function finish(outcome) {
       finished = true;
       results[current] = outcome;
+      onResult?.({ task: current, question: task.question, topic: title ?? 'Тренажёр', outcome });
       lock();
       showSolution();
       const last = current === tasks.length - 1;

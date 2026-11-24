@@ -2,11 +2,12 @@
 import { $, el } from '../dom.js';
 import { formatChatDate } from '../render/datetime.js';
 
-export function createSidebar({ onSelect, onNew }) {
+export function createSidebar({ onSelect, onNew, onProgress }) {
   const view = $('#chat-view');
   const list = $('#chat-list');
   const empty = $('#chat-list-empty');
   const newButton = $('#new-chat');
+  const progressButton = $('#progress-button');
   const toggle = $('#sidebar-toggle');
   const backdrop = $('#sidebar-backdrop');
 
@@ -17,6 +18,7 @@ export function createSidebar({ onSelect, onNew }) {
   function render() {
     empty.hidden = chats.length > 0;
     newButton.disabled = disabled;
+    progressButton.disabled = disabled;
     list.replaceChildren(
       ...chats.map((chat) => {
         const active = chat.id === activeId;
@@ -49,6 +51,10 @@ export function createSidebar({ onSelect, onNew }) {
   newButton.addEventListener('click', () => {
     setOpen(false);
     onNew();
+  });
+  progressButton.addEventListener('click', () => {
+    setOpen(false);
+    onProgress();
   });
 
   return {

@@ -2,12 +2,13 @@
 // ошибки, заготовки, очистка, выход. Список сохранённых чатов — в sidebar.js.
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
-import { DEFAULT_FOLLOWUPS, MODES, modeById } from '../modes.js';
+import { DEFAULT_FOLLOWUPS, PRESETS, modeById } from '../modes.js';
 import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
 import { findMath, renderMathText } from '../render/mathtext.js';
 import { stablePart } from '../render/streaming.js';
 import { MESSAGE, checkMessage } from '../validation.js';
+import { createProgressPanel } from './progress.js';
 import { createSidebar } from './sidebar.js';
 
 const SLOW_ANSWER_MS = 10_000;
@@ -62,7 +63,20 @@ export function createChatView({ onSessionLost, onLogout }) {
       open(null);
       input.focus();
     },
+    onProgress: () => progress.open(),
   });
+
+  // «Мой прогресс»: результаты тренажёров и тренировка по своим ошибкам в новом чате.
+  const progress = createProgressPanel({
+    onSessionLost,
+    async onReview() {
+      await open(null);
+      send('Потренируй меня на моих ошибках', modeById('review'));
+    },
+  });
+
+  /** Сохранить результат задания тренажёра. Прогресс — не главное: сбой записи чат не прерывает. */
+  const recordAttempt = (messageId, result) => api.saveAttempt({ message_id: messageId, ...result }).catch(() => {});
   let mode = null; // выбранная заготовка (из MODES); действует на одно сообщение
   let editing = false; // в поле ввода — последний вопрос чата: отправка заменит его и ответ
   let abort = null; // AbortController идущего запроса — для кнопки «Остановить»
@@ -138,9 +152,13 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   /** widgets — уже нарисованные графики и тренажёры этого ответа (см. streamingAnswer). */
   function storedMessage(message, widgets = null) {
+    const onTrainerResult = (result) => recordAttempt(message.id, result);
     const node = message.role === 'user'
       ? userMessage(message.text, timeElement(message.created_at), message.mode)
-      : assistantMessage(el('div', { class: 'prose' }, renderMarkdown(message.text, { widgets })), timeElement(message.created_at));
+      : assistantMessage(
+        el('div', { class: 'prose' }, renderMarkdown(message.text, { widgets, onTrainerResult })),
+        timeElement(message.created_at),
+      );
     node.dataset.id = message.id;
     node.message = message; // нужен действиям «изменить» и «ответить заново»
     return node;
@@ -167,6 +185,11 @@ export function createChatView({ onSessionLost, onLogout }) {
     // Готовые графики и тренажёры переживают перерисовки: иначе каждый кадр «печати» они
     // создавались бы заново и сбрасывали, например, положение ползунка.
     const widgets = new Map();
+    // Тренажёр можно начать решать, пока ответ ещё печатается и не сохранён: результаты копим
+    // и записываем, когда у ответа появится номер (saved).
+    let messageId = null;
+    const early = [];
+    const onTrainerResult = (result) => (messageId === null ? early.push(result) : recordAttempt(messageId, result));
     let received = ''; // всё, что уже пришло от сервера
     let shown = 0; // сколько символов из этого уже на экране
     let timer = null;
@@ -181,7 +204,7 @@ export function createChatView({ onSessionLost, onLogout }) {
         shown = Math.min(received.length, shown + step);
 
         const follow = isNearEnd(); // если пользователь отмотал ленту вверх — не дёргаем её
-        prose.replaceChildren(renderMarkdown(stablePart(received.slice(0, shown)), { widgets }));
+        prose.replaceChildren(renderMarkdown(stablePart(received.slice(0, shown)), { widgets, onTrainerResult }));
         if (follow) scrollToEnd();
       }
       if (shown < received.length) timer = setTimeout(tick, TYPING_FRAME_MS);
@@ -194,6 +217,11 @@ export function createChatView({ onSessionLost, onLogout }) {
       push(delta) {
         received += delta;
         if (timer === null) timer = setTimeout(tick, TYPING_FRAME_MS);
+      },
+      /** Ответ сохранён на сервере под номером id. */
+      saved(id) {
+        messageId = id;
+        for (const result of early.splice(0)) recordAttempt(id, result);
       },
       /** Ответ запрошен заново: стереть напечатанное и начать с чистого листа. */
       reset() {
@@ -412,6 +440,7 @@ export function createChatView({ onSessionLost, onLogout }) {
       sidebar.setActive(chatId);
       rememberInAddress(chatId);
       draft.replaceWith(storedMessage(exchange.user));
+      answer?.saved(exchange.assistant.id);
       (answer?.node ?? typing).replaceWith(storedMessage(exchange.assistant, answer?.widgets));
       if (follow) scrollToEnd();
     } catch (error) {
@@ -487,7 +516,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     input.focus();
   }
 
-  for (const item of MODES) {
+  for (const item of PRESETS) {
     // карточка на пустом экране
     const card = el('button', { type: 'button', class: 'preset' },
       el('span', { class: 'preset__title' }, item.action),

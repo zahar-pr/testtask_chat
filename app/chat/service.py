@@ -7,12 +7,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from app.chat.repository import Chat, ChatRepository, Message, NewMessage
-from app.chat.modes import as_model_input
+from app.chat.modes import REVIEW, as_model_input, review_request
 from app.chat.prompt import SYSTEM_PROMPT
 from app.clock import utc_now
 from app.db import chat_title
-from app.errors import ChatNotFound, NothingToReplace
+from app.errors import ChatNotFound, NothingToReplace, NothingToReview
 from app.llm.base import ChatTurn, LLMClient, LLMError, LLMFailure
+from app.progress.repository import ProgressRepository
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 # Сколько раз заново запросить ответ, если он оборвался на полуслове (с бесплатным Gemini
 # это случается), и какие сбои считаются временными.
+REVIEW_TASKS = 6  # сколько последних ошибок показывать модели в режиме «работа над ошибками»
 RESTARTS = 1
 TRANSIENT = {LLMFailure.UNAVAILABLE, LLMFailure.TIMEOUT}
 
@@ -47,10 +49,13 @@ ChatEvent = AnswerChunk | AnswerRestart | Exchange
 
 
 class ChatService:
-    def __init__(self, chats: ChatRepository, llm: LLMClient, context_exchanges: int) -> None:
+    def __init__(
+        self, chats: ChatRepository, llm: LLMClient, context_exchanges: int, progress: ProgressRepository
+    ) -> None:
         self._chats = chats
         self._llm = llm
         self._context_exchanges = context_exchanges
+        self._progress = progress
 
     def chats(self) -> list[Chat]:
         return self._chats.list_chats()
@@ -89,7 +94,7 @@ class ChatService:
                 raise NothingToReplace()
             context = recent[: len(recent) - skipped]
         turns = [ChatTurn(message.role, as_model_input(message.text, message.mode)) for message in context]
-        turns.append(ChatTurn("user", as_model_input(text, mode)))
+        turns.append(ChatTurn("user", self._model_input(text, mode)))
 
         chunks: list[str] = []
         for restarts_left in range(RESTARTS, -1, -1):
@@ -117,6 +122,15 @@ class ChatService:
             replace_last=replace_last and chat_id is not None,
         )
         yield Exchange(chat=chat, user=user, assistant=assistant)
+
+    def _model_input(self, text: str, mode: str | None) -> str:
+        """Новый вопрос в том виде, в каком его получит модель."""
+        if mode != REVIEW:
+            return as_model_input(text, mode)
+        mistakes = self._progress.mistakes(REVIEW_TASKS)
+        if not mistakes:
+            raise NothingToReview()
+        return review_request(text, [(attempt.topic, attempt.question) for attempt in mistakes])
 
     def _require(self, chat_id: int) -> Chat:
         chat = self._chats.get_chat(chat_id)

@@ -24,6 +24,8 @@ from app.db import Database
 from app.errors import register_error_handlers
 from app.llm.base import LLMClient
 from app.llm.gemini import GeminiClient
+from app.progress.repository import ProgressRepository
+from app.progress.router import router as progress_router
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
@@ -97,13 +99,18 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.state.login_rate_limiter = LoginRateLimiter(
         max_attempts=settings.login_max_attempts, window_seconds=settings.login_window_seconds
     )
+    app.state.progress = ProgressRepository(database)
     app.state.chat_service = ChatService(
-        chats=ChatRepository(database), llm=llm, context_exchanges=settings.context_exchanges
+        chats=ChatRepository(database),
+        llm=llm,
+        context_exchanges=settings.context_exchanges,
+        progress=app.state.progress,
     )
 
     register_error_handlers(app)
     app.include_router(auth_router)
     app.include_router(chat_router)
+    app.include_router(progress_router)
 
     app.add_middleware(SecurityHeadersMiddleware)
 

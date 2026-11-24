@@ -54,12 +54,15 @@ const WIDGET_CONTEXT = { renderBlock: (text) => renderMarkdown(text), renderInli
 /**
  * widgets — необязательная память между перерисовками одного сообщения (Map): пока ответ
  * «печатается», уже готовые графики и тренажёры не создаются заново и не теряют состояние.
+ * onTrainerResult — куда тренажёры сообщают результат задания: { block, task, question, topic, outcome },
+ * где block — номер тренажёра в этом сообщении.
  */
-export function renderMarkdown(source, { widgets = null } = {}) {
+export function renderMarkdown(source, { widgets = null, onTrainerResult = null } = {}) {
   const stash = [];
   const keep = (mark, node) => `${mark}${stash.push(node) - 1}${mark}`;
 
   const seen = new Map(); // одинаковые блоки в одном сообщении — разные элементы
+  let trainers = 0;
   const fence = (language, code) => {
     const kind = language.trim().toLowerCase();
     if (kind.startsWith(PENDING_PREFIX) && isWidget(kind.slice(PENDING_PREFIX.length))) {
@@ -70,7 +73,9 @@ export function renderMarkdown(source, { widgets = null } = {}) {
     const repeat = seen.get(code) ?? 0;
     seen.set(code, repeat + 1);
     const key = `${kind}#${repeat}:${code}`;
-    const node = widgets?.get(key) ?? renderWidget(kind, code, WIDGET_CONTEXT);
+    const block = kind === 'trainer' ? trainers++ : 0;
+    const context = { ...WIDGET_CONTEXT, onResult: (result) => onTrainerResult?.({ block, ...result }) };
+    const node = widgets?.get(key) ?? renderWidget(kind, code, context);
     widgets?.set(key, node);
     return node;
   };
