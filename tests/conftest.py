@@ -42,10 +42,11 @@ def sse_events(response) -> list[tuple[str, dict]]:
     return events
 
 
-def ask(client, text: str, chat_id: int | None = None, mode: str | None = None):
+def ask(client, text: str, chat_id: int | None = None, mode: str | None = None, replace_last: bool = False):
     """Задать вопрос: в чате chat_id или, если он не указан, в новом чате."""
     path = "/api/chats" if chat_id is None else f"/api/chats/{chat_id}/messages"
-    return client.post(path, json={"text": text} if mode is None else {"text": text, "mode": mode})
+    payload = {"text": text, "replace_last": replace_last}
+    return client.post(path, json=payload if mode is None else {**payload, "mode": mode})
 
 
 def done(response) -> dict:

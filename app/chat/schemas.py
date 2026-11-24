@@ -12,6 +12,8 @@ from app.config import MESSAGE_MAX_LENGTH
 class MessageRequest(BaseModel):
     text: str
     mode: ModeId | None = None  # выбранная заготовка; без неё — обычный вопрос
+    # Заменить последнюю пару чата этим вопросом: «ответить заново» и правка последнего вопроса.
+    replace_last: bool = False
 
     @field_validator("text")
     @classmethod

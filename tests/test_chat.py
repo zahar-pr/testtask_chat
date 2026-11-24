@@ -150,6 +150,40 @@ def test_chats_survive_restart(authed, settings, llm):
     assert history(restarted, chat["id"])[0]["text"] == "Что такое предел?"
 
 
+# --- «Ответить заново» и правка последнего вопроса ---
+
+
+def test_replace_last_swaps_the_last_pair_and_hides_it_from_the_model(authed, llm):
+    chat_id = done(ask(authed, "первый"))["chat"]["id"]
+    ask(authed, "второй", chat_id)
+
+    body = done(ask(authed, "второй, исправленный", chat_id, replace_last=True))
+
+    assert [m["text"] for m in history(authed, chat_id) if m["role"] == "user"] == ["первый", "второй, исправленный"]
+    assert history(authed, chat_id)[-2:] == [body["user"], body["assistant"]]
+    assert [t.text for t in llm.calls[-1] if t.role == "user"] == ["первый", "второй, исправленный"]
+    assert chats(authed)[0]["title"] == "первый"
+
+
+def test_replacing_the_only_question_renames_the_chat(authed, llm):
+    chat_id = done(ask(authed, "опечатка в вапросе"))["chat"]["id"]
+
+    body = done(ask(authed, "вопрос без опечатки", chat_id, replace_last=True))
+
+    assert body["chat"]["title"] == "вопрос без опечатки"
+    assert len(history(authed, chat_id)) == 2
+    assert [t.text for t in llm.calls[-1]] == ["вопрос без опечатки"]
+
+
+def test_failed_replacement_keeps_the_old_pair(authed, llm):
+    old = done(ask(authed, "вопрос"))
+    llm.error = LLMError(LLMFailure.UNAVAILABLE, "down")
+
+    assert ask(authed, "вопрос", old["chat"]["id"], replace_last=True).status_code == 502
+
+    assert history(authed, old["chat"]["id"]) == [old["user"], old["assistant"]]
+
+
 # --- Заготовки ---
 
 

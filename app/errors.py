@@ -46,6 +46,12 @@ class ChatNotFound(AppError):
     message = "Чат не найден. Возможно, он был удалён."
 
 
+class NothingToReplace(AppError):
+    status_code = 409
+    code = "nothing_to_replace"
+    message = "В этом чате ещё нет вопроса, который можно заменить."
+
+
 class TooManyLoginAttempts(AppError):
     status_code = 429
     code = "too_many_attempts"

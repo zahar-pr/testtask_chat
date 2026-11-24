@@ -2,7 +2,7 @@
 // ошибки, заготовки, очистка, выход. Список сохранённых чатов — в sidebar.js.
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
-import { MODES, modeById } from '../modes.js';
+import { DEFAULT_FOLLOWUPS, MODES, modeById } from '../modes.js';
 import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
 import { stablePart } from '../render/streaming.js';
@@ -38,6 +38,9 @@ export function createChatView({ onSessionLost, onLogout }) {
   const input = $('#message-input');
   const counter = $('#message-counter');
   const sendButton = $('#send-button');
+  const stopButton = $('#stop-button');
+  const editBanner = $('#edit-banner');
+  const editCancel = $('#edit-cancel');
   const clearButton = $('#clear-button');
   const logoutButton = $('#logout-button');
   const clearDialog = $('#clear-dialog');
@@ -57,6 +60,8 @@ export function createChatView({ onSessionLost, onLogout }) {
     },
   });
   let mode = null; // выбранная заготовка (из MODES); действует на одно сообщение
+  let editing = false; // в поле ввода — последний вопрос чата: отправка заменит его и ответ
+  let abort = null; // AbortController идущего запроса — для кнопки «Остановить»
 
   // --- Состояние элементов управления ---
 
@@ -68,12 +73,15 @@ export function createChatView({ onSessionLost, onLogout }) {
     sendButton.disabled = waiting || !loaded || !check.valid;
     sendButton.classList.toggle('is-busy', waiting);
     sendButton.setAttribute('aria-label', waiting ? 'Ждём ответа' : 'Отправить');
+    stopButton.hidden = !waiting;
+    editBanner.hidden = !editing;
 
     const hasMessages = list.childElementCount > 0;
     welcome.hidden = !loaded || hasMessages;
     clearButton.disabled = waiting || chatId === null;
     sidebar.setDisabled(waiting);
     for (const button of welcome.querySelectorAll('button')) button.disabled = waiting;
+    refreshActions();
   }
 
   function autosize() {
@@ -122,6 +130,7 @@ export function createChatView({ onSessionLost, onLogout }) {
       ? userMessage(message.text, timeElement(message.created_at), message.mode)
       : assistantMessage(el('div', { class: 'prose' }, renderMarkdown(message.text, { widgets })), timeElement(message.created_at));
     node.dataset.id = message.id;
+    node.message = message; // нужен действиям «изменить» и «ответить заново»
     return node;
   }
 
@@ -191,22 +200,82 @@ export function createChatView({ onSessionLost, onLogout }) {
     };
   }
 
-  function markFailed(draft, text, usedMode, reason) {
-    draft.classList.replace('is-sending', 'is-failed');
-    $('.message__meta', draft).textContent = 'Не отправлено';
+  /** Последняя сохранённая пара чата: [вопрос, ответ] — или [], если её нет. */
+  function lastPair() {
+    const stored = [...list.querySelectorAll('.message[data-id]')];
+    const [question, answer] = stored.slice(-2);
+    return question?.message.role === 'user' && answer?.message.role === 'assistant' ? [question, answer] : [];
+  }
 
-    const dismiss = el('button', { type: 'button', class: 'button button--ghost button--small' }, 'Убрать');
-    const retry = el('button', { type: 'button', class: 'button button--secondary button--small' }, 'Повторить');
-    dismiss.addEventListener('click', () => {
+  const actionButton = (label, kind, onClick) => {
+    const button = el('button', { type: 'button', class: `button button--small button--${kind}` }, label);
+    button.addEventListener('click', onClick);
+    return button;
+  };
+
+  /**
+   * Действия у последней пары: продолжения разговора одной кнопкой, «ответить заново»,
+   * «изменить вопрос». У более ранних сообщений их нет — менять можно только конец разговора.
+   */
+  function refreshActions() {
+    for (const stale of list.querySelectorAll('.message__actions')) stale.remove();
+    if (!loaded || waiting || editing || list.querySelector('.is-failed, .is-stopped')) return;
+    const [question, answer] = lastPair();
+    if (!question) return;
+
+    const asked = question.message;
+    const followups = modeById(asked.mode)?.followups ?? DEFAULT_FOLLOWUPS;
+    $('.message__main', answer).append(
+      el('div', { class: 'message__actions' },
+        ...followups.map((item) => {
+          const chip = el('button', { type: 'button', class: 'chip chip--small' }, item.label);
+          chip.addEventListener('click', () => send(item.text, modeById(item.mode)));
+          return chip;
+        }),
+        actionButton('Ответить заново', 'ghost', () => send(asked.text, modeById(asked.mode), { replaceLast: true })),
+      ),
+    );
+    $('.message__main', question).append(
+      el('div', { class: 'message__actions' }, actionButton('Изменить', 'ghost', () => startEditing(asked.text, modeById(asked.mode)))),
+    );
+  }
+
+  /** Вернуть вопрос в поле ввода, чтобы исправить его; отправка заменит последнюю пару чата. */
+  function startEditing(text, usedMode, replacesLast = true) {
+    setMode(usedMode);
+    editing = replacesLast;
+    input.value = text;
+    autosize();
+    refresh();
+    input.focus();
+  }
+
+  function stopEditing() {
+    editing = false;
+    input.value = '';
+    autosize();
+    setMode(null);
+  }
+
+  /** Вопрос не получил ответа (сбой или остановка): оставляем его в ленте с действиями. */
+  function markUnanswered(draft, text, usedMode, error, replaceLast) {
+    const wasStopped = error.code === 'stopped';
+    draft.classList.replace('is-sending', wasStopped ? 'is-stopped' : 'is-failed');
+    $('.message__meta', draft).textContent = wasStopped ? 'Остановлено' : 'Не отправлено';
+
+    const again = (action) => () => {
       draft.remove();
-      refresh();
-    });
-    retry.addEventListener('click', () => {
-      draft.remove();
-      send(text, usedMode);
-    });
+      action();
+    };
     $('.message__main', draft).append(
-      el('div', { class: 'message__error', role: 'alert' }, reason, el('div', { class: 'message__error-actions' }, dismiss, retry)),
+      el('div', { class: 'message__error', role: 'alert' },
+        wasStopped ? 'Генерация остановлена, ответ не сохранён.' : error.message,
+        el('div', { class: 'message__error-actions' },
+          actionButton('Убрать', 'ghost', again(refresh)),
+          actionButton('Изменить', 'ghost', again(() => startEditing(text, usedMode, replaceLast))),
+          actionButton('Повторить', 'secondary', again(() => send(text, usedMode, { replaceLast }))),
+        ),
+      ),
     );
   }
 
@@ -253,6 +322,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     loaded = id === null;
     sidebar.setActive(id);
     rememberInAddress(id);
+    editing = false;
     setMode(null);
     list.replaceChildren();
     setStatus(id === null ? undefined : 'Загружаем историю…');
@@ -278,13 +348,20 @@ export function createChatView({ onSessionLost, onLogout }) {
     scrollToEnd();
   }
 
-  /** usedMode — заготовка для этого сообщения; по умолчанию та, что выбрана сейчас. */
-  async function send(rawText, usedMode = mode) {
+  /**
+   * Отправить вопрос. usedMode — заготовка для этого сообщения (по умолчанию выбранная сейчас);
+   * replaceLast — вопрос заменяет последнюю пару чата: «ответить заново» и правка вопроса.
+   */
+  async function send(rawText, usedMode = mode, { replaceLast = editing } = {}) {
     const text = rawText.trim();
     if (waiting || !loaded || !checkMessage(rawText).valid) return;
 
+    editing = false;
     setMode(null); // заготовка действует на одно сообщение
-    for (const failed of list.querySelectorAll('.is-failed')) failed.remove();
+    for (const unanswered of list.querySelectorAll('.is-failed, .is-stopped')) unanswered.remove();
+    // Заменяемую пару убираем с экрана, но не забываем: при сбое сервер её сохранит — вернём и мы.
+    const replaced = replaceLast ? lastPair() : [];
+    for (const node of replaced) node.remove();
     const draft = userMessage(text, 'Отправляется…', usedMode?.id);
     draft.classList.add('is-sending', 'is-new');
     const typing = typingIndicator();
@@ -292,6 +369,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     list.append(draft, typing);
 
     waiting = true;
+    abort = new AbortController();
     refresh();
     scrollToEnd();
 
@@ -300,6 +378,8 @@ export function createChatView({ onSessionLost, onLogout }) {
       const exchange = await api.sendMessage(rawText, {
         chatId,
         mode: usedMode?.id ?? null,
+        replaceLast: replaced.length > 0,
+        signal: abort.signal,
         onDelta(delta) {
           if (answer === null) {
             // Первая часть ответа: «Решаю…» сменяется текстом, который дальше допечатывается.
@@ -328,10 +408,12 @@ export function createChatView({ onSessionLost, onLogout }) {
       answer?.node.remove();
       typing.remove();
       if (sessionLost(error)) return;
-      markFailed(draft, text, usedMode, error.message);
+      draft.before(...replaced);
+      markUnanswered(draft, text, usedMode, error, replaced.length > 0);
       scrollToEnd();
     } finally {
       waiting = false;
+      abort = null;
       refresh();
     }
   }
@@ -445,6 +527,12 @@ export function createChatView({ onSessionLost, onLogout }) {
     send(text);
   });
 
+  stopButton.addEventListener('click', () => abort?.abort());
+  editCancel.addEventListener('click', () => {
+    stopEditing();
+    input.focus();
+  });
+
   clearButton.addEventListener('click', () => clearDialog.showModal());
   clearDialog.addEventListener('close', () => {
     if (clearDialog.returnValue === 'confirm') clearChat();
@@ -473,6 +561,8 @@ export function createChatView({ onSessionLost, onLogout }) {
     hide() {
       view.hidden = true;
       opening += 1;
+      abort?.abort();
+      editing = false;
       chatId = null;
       loaded = false;
       sidebar.close();

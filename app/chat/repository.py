@@ -74,12 +74,14 @@ class ChatRepository:
         return [_to_message(row) for row in reversed(rows)]
 
     def save_exchange(
-        self, chat_id: int | None, title: str, messages: list[NewMessage]
+        self, chat_id: int | None, title: str, messages: list[NewMessage], replace_last: bool = False
     ) -> tuple[Chat, list[Message]]:
         """Записать сообщения в чат одной транзакцией: либо все, либо ни одного.
 
         Если chat_id не задан, в той же транзакции создаётся новый чат с названием `title` —
         поэтому чатов без сообщений в базе не бывает.
+        replace_last — новая пара встаёт на место последней («ответить заново», правка вопроса):
+        старая пара удаляется в той же транзакции, так что при сбое она остаётся нетронутой.
         """
         moment = messages[-1].created_at
         saved: list[Message] = []
@@ -94,6 +96,17 @@ class ChatRepository:
                 connection.execute(
                     "UPDATE chats SET updated_at = ? WHERE id = ?", (to_storage(moment), chat_id)
                 )
+                if replace_last:
+                    connection.execute(
+                        "DELETE FROM messages WHERE id IN "
+                        "(SELECT id FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?)",
+                        (chat_id, len(messages)),
+                    )
+                    remaining = connection.execute(
+                        "SELECT COUNT(*) FROM messages WHERE chat_id = ?", (chat_id,)
+                    ).fetchone()[0]
+                    if remaining == 0:  # заменили первый вопрос чата — меняется и его название
+                        connection.execute("UPDATE chats SET title = ? WHERE id = ?", (title, chat_id))
                 row = connection.execute("SELECT title FROM chats WHERE id = ?", (chat_id,)).fetchone()
                 chat = Chat(chat_id, row["title"], moment)
 

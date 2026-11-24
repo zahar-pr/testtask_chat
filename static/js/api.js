@@ -12,18 +12,21 @@ export class ApiError extends Error {
 const NETWORK_ERROR = 'Нет связи с сервером. Проверьте подключение и попробуйте ещё раз.';
 const STREAM_BROKEN = 'Соединение прервалось, ответ получен не полностью. Попробуйте ещё раз.';
 
+const stopped = () => new ApiError(0, 'stopped', 'Генерация остановлена.');
+
 /** Выполнить запрос и вернуть Response; любой неуспех превращается в ApiError. */
-async function call(method, path, body) {
+async function call(method, path, body, signal) {
   let response;
   try {
     response = await fetch(path, {
       method,
+      signal,
       credentials: 'same-origin',
       headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, 'network_error', NETWORK_ERROR);
+    throw signal?.aborted ? stopped() : new ApiError(0, 'network_error', NETWORK_ERROR);
   }
 
   if (!response.ok) {
@@ -80,14 +83,17 @@ export const listMessages = async (chatId) => (await request('GET', `/api/chats/
 export const deleteChat = (chatId) => request('DELETE', `/api/chats/${chatId}`);
 
 /**
- * Отправить вопрос в чат chatId (null — начать новый чат; mode — заготовка или null).
+ * Отправить вопрос в чат chatId (null — начать новый чат).
+ *   mode        — заготовка или null;
+ *   replaceLast — вопрос заменяет последнюю пару чата («ответить заново», правка вопроса);
+ *   signal      — AbortSignal: остановить генерацию (ошибка с кодом 'stopped').
  * Ответ модели приходит потоком: каждая новая часть передаётся в onDelta, а результат
  * функции — сохранённые { chat, user, assistant }. onReset вызывается, если ответ оборвался
  * и сервер запросил его заново: показанное до этого нужно стереть.
  */
-export async function sendMessage(text, { chatId = null, mode = null, onDelta, onReset } = {}) {
+export async function sendMessage(text, { chatId = null, mode = null, replaceLast = false, signal, onDelta, onReset } = {}) {
   const path = chatId === null ? '/api/chats' : `/api/chats/${chatId}/messages`;
-  const response = await call('POST', path, { text, mode });
+  const response = await call('POST', path, { text, mode, replace_last: replaceLast }, signal);
   try {
     for await (const { event, data } of readEvents(response)) {
       if (event === 'delta') onDelta?.(data.text);
@@ -97,7 +103,7 @@ export async function sendMessage(text, { chatId = null, mode = null, onDelta, o
     }
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError(0, 'network_error', STREAM_BROKEN);
+    throw signal?.aborted ? stopped() : new ApiError(0, 'network_error', STREAM_BROKEN);
   }
   throw new ApiError(0, 'network_error', STREAM_BROKEN); // поток закончился без события done
 }

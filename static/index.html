@@ -108,6 +108,10 @@
 
     <footer class="chat__footer">
       <form id="composer" class="composer" novalidate>
+        <div id="edit-banner" class="composer__banner" hidden>
+          <span>Вы меняете последний вопрос — ответ на него будет заменён.</span>
+          <button type="button" id="edit-cancel" class="button button--ghost button--small">Отмена</button>
+        </div>
         <label class="visually-hidden" for="message-input">Сообщение</label>
         <textarea id="message-input" class="composer__input" rows="1"
                   placeholder="Спросите что-нибудь о математике…" aria-describedby="message-counter" enterkeyhint="send"></textarea>
@@ -124,6 +128,10 @@
           </div>
           <span class="composer__hint">Enter — отправить · Shift + Enter — новая строка</span>
           <span id="message-counter" class="composer__counter" aria-live="off">0 / 500</span>
+          <button type="button" id="stop-button" class="button button--secondary button--small composer__stop" hidden>
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+            <span class="button__label">Остановить</span>
+          </button>
           <button type="submit" id="send-button" class="send" aria-label="Отправить" disabled>
             <svg class="icon send__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
             <span class="spinner" aria-hidden="true"></span>

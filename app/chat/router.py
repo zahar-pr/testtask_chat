@@ -48,7 +48,7 @@ def list_messages(chat_id: int, chat: Service):
 @router.post("/{chat_id}/messages", status_code=status.HTTP_201_CREATED)
 def send_message(chat_id: int, payload: MessageRequest, chat: Service) -> StreamingResponse:
     """Задать вопрос в существующем чате."""
-    return _answer_stream(chat.send(payload.text, payload.mode, chat_id))
+    return _answer_stream(chat.send(payload.text, payload.mode, chat_id, payload.replace_last))
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
