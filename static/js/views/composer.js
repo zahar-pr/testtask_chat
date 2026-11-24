@@ -62,9 +62,11 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
     editBanner.hidden = !editing;
   }
 
+  /** Высота поля — по тексту. Пока экран чата скрыт, измерить её нельзя: оставляем высоту по умолчанию. */
   function autosize() {
     input.style.height = 'auto';
-    input.style.height = `${input.scrollHeight}px`;
+    const height = input.scrollHeight;
+    input.style.height = height > 0 ? `${height}px` : '';
   }
 
   function setText(text) {

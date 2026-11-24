@@ -15,6 +15,12 @@ from tests.e2e.helpers import (
 def test_message_field_rules(chat):
     send = chat.locator("#send-button")
     counter = chat.locator("#message-counter")
+    field = chat.locator("#message-input")
+
+    assert field.bounding_box()["height"] >= 20  # поле видно сразу после входа, а не схлопнуто
+    chat.fill("#message-input", "строка\n" * 4)
+    assert field.bounding_box()["height"] >= 80  # и растёт вместе с текстом
+    chat.fill("#message-input", "")
 
     assert send.is_disabled()
     chat.fill("#message-input", "   \n  ")
