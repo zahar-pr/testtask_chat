@@ -52,6 +52,16 @@ def test_malformed_key_fails_validation(client, key):
     assert response.json()["error"]["code"] == "validation_error"
 
 
+@pytest.mark.parametrize("key", ["wrong-key-000", "ключ с пробелами", "x" * 300])
+def test_submitted_key_is_never_echoed_back(client, key):
+    """Что бы ни прислали в поле ключа, сервер не повторяет это в ответе (и ответ не попадёт в чужие логи)."""
+    response = client.post("/api/auth/login", json={"access_key": key})
+
+    assert response.status_code in (401, 422)
+    assert key not in response.text
+    assert ACCESS_KEY not in response.text
+
+
 def test_login_attempts_are_rate_limited(client):
     for _ in range(3):
         assert client.post("/api/auth/login", json={"access_key": "wrong-key-000"}).status_code == 401

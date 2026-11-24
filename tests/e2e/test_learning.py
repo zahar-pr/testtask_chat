@@ -11,7 +11,7 @@ def test_preset_lesson_has_sections_plot_and_trainer(chat, llm):
     assert llm.requests[-1] == "Режим «Изучение с нуля». Тема: дискриминант"
     assert chat.inner_text(".message__mode") == "Изучение с нуля"
     lesson = chat.locator("#messages .message--assistant").last
-    assert lesson.locator("h4").count() == 8
+    assert lesson.locator("h3").count() == 8
     assert lesson.locator(".plot path.plot__curve").count() == 1
     assert lesson.locator(".trainer").count() == 1
     assert lesson.locator(".widget--failed, .math-error").count() == 0

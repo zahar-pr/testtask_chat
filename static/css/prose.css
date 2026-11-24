@@ -5,7 +5,7 @@
 
 .prose p { margin: .7em 0; }
 .prose h3, .prose h4 { margin: 1.3em 0 .45em; font-size: 1.12em; font-weight: 650; line-height: 1.35; }
-.prose h3 { font-size: 1.28em; }
+.prose h4 { font-size: 1em; }
 .prose strong { font-weight: 650; }
 .prose a { color: var(--accent); }
 .prose hr { margin: 1.2em 0; border: 0; border-top: 1px solid var(--line); }

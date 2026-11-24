@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="description" content="Чат-помощник по математике: объясняет темы с нуля, решает задачи по шагам, рисует графики и даёт тренажёры.">
-  <title>Помощник по математике</title>
+  <title>Математика</title>
   <link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
   <link rel="preload" href="/static/vendor/fonts/JetBrainsMono-normal-400-700-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/vendor/fonts/JetBrainsMono-normal-400-700-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -27,8 +27,8 @@
   <!-- Экран 1: вход по ключу доступа -->
   <main id="login-view" class="login" hidden>
     <form id="login-form" class="login__card" novalidate>
-      <h1 class="login__title">Помощник по&nbsp;математике</h1>
-      <p class="login__lead">Объясняет темы с нуля, решает задачи по шагам и&nbsp;рисует графики.</p>
+      <h1 class="login__title">Математика</h1>
+      <p class="login__lead">Помощник: объясняет темы с нуля, решает задачи по шагам и&nbsp;рисует графики.</p>
 
       <p id="login-notice" class="login__notice" role="status" hidden></p>
 
@@ -55,6 +55,7 @@
   <div id="chat-view" class="chat" hidden>
     <!-- Сохранённые чаты: на широком экране — колонка слева, на телефоне — выезжающая панель -->
     <aside id="sidebar" class="sidebar" aria-label="Чаты">
+      <h1 class="visually-hidden">Математика — чат</h1>
       <button type="button" id="new-chat" class="button button--secondary sidebar__new">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         <span class="button__label">Новый чат</span>

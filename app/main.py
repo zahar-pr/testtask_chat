@@ -53,13 +53,13 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
             gemini.close()
 
     app = FastAPI(
-        title="Чат-помощник по математике", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
+        title="Математика", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
     )
 
     # Сервисы собираются здесь один раз; маршруты достают их из app.state через зависимости.
     chats = ChatRepository(database)
     progress = ProgressService(ProgressRepository(database), find_message=chats.get_message)
-    app.state.settings = settings
+    app.state.cookie_secure = settings.cookie_secure
     app.state.auth_service = AuthService(
         access_key=settings.access_key.get_secret_value(),
         sessions=SessionRepository(database),

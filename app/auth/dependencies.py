@@ -25,7 +25,7 @@ def get_login_rate_limiter(request: Request) -> LoginRateLimiter:
 
 def cookie_must_be_secure(request: Request) -> bool:
     """Ставить ли cookie сессии флаг Secure — по настройке COOKIE_SECURE (см. app/config.py)."""
-    policy = request.app.state.settings.cookie_secure
+    policy = request.app.state.cookie_secure
     return policy == "always" or (policy == "auto" and request.url.scheme == "https")
 
 

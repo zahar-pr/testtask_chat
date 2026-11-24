@@ -45,6 +45,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements-e2e.txt
       - run: playwright install --with-deps chromium
+      - run: npm install  # axe-core для проверки доступности
       - run: python -m pytest tests/e2e
 
   docker:

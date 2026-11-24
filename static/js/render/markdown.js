@@ -149,7 +149,8 @@ function parseBlocks(lines, stash) {
 
     const heading = HEADING.exec(line);
     if (heading) {
-      nodes.push(renderInline(el(heading[1].length <= 2 ? 'h3' : 'h4'), heading[2], stash));
+      // В ответе модели заголовки начинаются с третьего уровня: первые два заняты самим интерфейсом.
+      nodes.push(renderInline(el(heading[1].length <= 3 ? 'h3' : 'h4'), heading[2], stash));
       index++;
       continue;
     }

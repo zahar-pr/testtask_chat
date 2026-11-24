@@ -5,7 +5,7 @@
   --surface-sunken: #efede7;
   --ink: #1d1c1a;
   --ink-soft: #5d5a54;
-  --ink-faint: #8d8a83;
+  --ink-faint: #6b6862; /* второстепенный текст: контраст не ниже 4.5:1 на любом фоне темы */
   --line: #e3e0d8;
   --line-strong: #cfcbc1;
   --grid: rgba(47, 79, 216, 0.07);
@@ -55,7 +55,7 @@
     --surface-sunken: #262624;
     --ink: #edebe6;
     --ink-soft: #b1aea6;
-    --ink-faint: #85827b;
+    --ink-faint: #9a978f;
     --line: #2f2e2b;
     --line-strong: #43413d;
     --grid: rgba(142, 162, 255, 0.06);

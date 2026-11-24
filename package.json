@@ -2,8 +2,11 @@
   "name": "math-chat",
   "private": true,
   "type": "module",
-  "description": "Node.js нужен только для тестов JS-кода интерфейса; само приложение работает без него.",
+  "description": "Node.js нужен только для тестов: модули JS (npm test), автопроверка качества и проверка доступности. Само приложение работает без него.",
   "scripts": {
     "test": "node --test \"tests/js/*.test.js\""
+  },
+  "devDependencies": {
+    "axe-core": "4.10.2"
   }
 }
