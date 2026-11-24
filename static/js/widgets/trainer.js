@@ -3,15 +3,14 @@
 // Как и график, тренажёр собирается из данных, а не из присланной разметки: модель описывает
 // задания, а внешний вид и поведение одинаковы для всех тренажёров в чате.
 import { el } from '../dom.js';
-import { compile } from './expr.js';
-import { formatNumber } from './format.js';
-import { createPlot } from './plot.js';
+import { compile } from '../math/expr.js';
+import { formatNumber } from '../math/format.js';
+import { createPlot } from './plot/index.js';
+import { isObject, text } from './util.js';
 
 const MAX_TASKS = 10;
 const DEFAULT_TOLERANCE = 0.005; // допуск при сравнении чисел: 0,5 % (или 0,005 для ответов около нуля)
 
-const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
-const text = (value) => (typeof value === 'string' && value.trim() !== '' ? value.trim() : null);
 
 function toNumber(source) {
   if (typeof source === 'number') return source;
@@ -19,7 +18,8 @@ function toNumber(source) {
   return NaN;
 }
 
-function normalize(spec) {
+/** Проверить описание тренажёра и привести задания к одному виду. Ошибка — исключение с причиной. */
+export function normalizeTrainer(spec) {
   if (!isObject(spec) || !Array.isArray(spec.tasks)) throw new Error('нужен список заданий «tasks»');
 
   const tasks = spec.tasks.filter(isObject).slice(0, MAX_TASKS).map((task, index) => {
@@ -78,7 +78,7 @@ export function sameNumbers(given, expected, tolerance) {
  */
 export function createTrainer(spec, context) {
   const { renderBlock, renderInline, onResult } = context;
-  const { title, tasks } = normalize(spec);
+  const { title, tasks } = normalizeTrainer(spec);
 
   // Итог по каждому заданию: 'first' — верно с первой попытки, 'solved' — верно не сразу,
   // 'revealed' — посмотрели решение.

@@ -8,9 +8,8 @@
 // ссылки, формулы $...$, $$...$$, \(...\), \[...\], а также наглядные блоки ```plot и ```trainer
 // (графики и тренажёры — см. widgets/).
 import { el } from '../dom.js';
-import {
-  CLOSING_FENCE, NEXT_FENCE, WIDGET_FENCE, isWidget, jsonObjectEnd, renderPendingWidget, renderWidget,
-} from '../widgets/index.js';
+import { renderPendingWidget, renderWidget } from '../widgets/index.js';
+import { isWidgetKind, splitWidgetBlocks } from './fences.js';
 import { renderMath } from './math.js';
 
 // Код и формулы вырезаются из текста первыми и заменяются заглушками, чтобы звёздочки и
@@ -65,10 +64,10 @@ export function renderMarkdown(source, { widgets = null, onTrainerResult = null 
   let trainers = 0;
   const fence = (language, code) => {
     const kind = language.trim().toLowerCase();
-    if (kind.startsWith(PENDING_PREFIX) && isWidget(kind.slice(PENDING_PREFIX.length))) {
+    if (kind.startsWith(PENDING_PREFIX) && isWidgetKind(kind.slice(PENDING_PREFIX.length))) {
       return renderPendingWidget(kind.slice(PENDING_PREFIX.length));
     }
-    if (!isWidget(kind)) return el('pre', {}, el('code', {}, code));
+    if (!isWidgetKind(kind)) return el('pre', {}, el('code', {}, code));
 
     const repeat = seen.get(code) ?? 0;
     seen.set(code, repeat + 1);
@@ -80,36 +79,11 @@ export function renderMarkdown(source, { widgets = null, onTrainerResult = null 
     return node;
   };
 
-  // Графики и тренажёры вырезаем первыми. Блок заканчивается там, где заканчивается его
-  // JSON-описание; закрывающая строка ``` необязательна — модели случается её забыть.
-  const stashWidgets = (original) => {
-    let input = original;
-    let output = '';
-    let cursor = 0;
-    const opening = new RegExp(WIDGET_FENCE.source, WIDGET_FENCE.flags);
-    for (let match = opening.exec(input); match; match = opening.exec(input)) {
-      const bodyStart = match.index + match[0].length;
-      const bodyEnd = jsonObjectEnd(input, bodyStart);
-      if (bodyEnd === -1) continue; // описание оборвано — разберётся как обычный блок кода
-
-      let next = bodyEnd;
-      const closing = CLOSING_FENCE.exec(input.slice(bodyEnd));
-      if (closing) next += closing[0].length;
-      else {
-        // Закрывающей строки нет на месте. Если она стоит ниже, после куска обычного текста, —
-        // убираем её, иначе она открыла бы «блок кода» и спрятала всё до следующего блока.
-        const late = NEXT_FENCE.exec(input.slice(bodyEnd));
-        if (late && late[1].trim() === '') {
-          const at = bodyEnd + late.index;
-          input = input.slice(0, at) + input.slice(at + late[0].length);
-        }
-      }
-      output += `${input.slice(cursor, match.index)}${keep(BLOCK_MARK, fence(match[1], input.slice(bodyStart, bodyEnd)))}\n`;
-      cursor = next;
-      opening.lastIndex = next;
-    }
-    return output + input.slice(cursor);
-  };
+  // Графики и тренажёры вырезаем первыми (где блок начинается и заканчивается, знает fences.js).
+  const stashWidgets = (input) =>
+    splitWidgetBlocks(input)
+      .map((part) => (part.type === 'text' ? part.text : `${keep(BLOCK_MARK, fence(part.kind, part.source))}\n`))
+      .join('');
 
   const text = stashWidgets(source.replace(/\r\n?/g, '\n').replace(/[\u0000\u0001]/g, ''))
     // блоки кода ```...```

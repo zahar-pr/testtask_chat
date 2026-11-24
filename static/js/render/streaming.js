@@ -4,7 +4,7 @@
 // сырым LaTeX, а потом скачком превратилась в формулу. Поэтому до разбора от текста отрезается
 // «хвост», который ещё не закончен, — формула появляется целиком, когда дописана.
 
-import { CLOSING_FENCE, isWidget, jsonObjectEnd } from '../widgets/index.js';
+import { readWidgetFence } from './fences.js';
 import { PENDING_PREFIX } from './markdown.js';
 
 const NOT_MATH = -1; // строка закончилась без закрывающего $ — это был просто знак доллара
@@ -18,15 +18,15 @@ export function stablePart(text) {
     const char = text[index];
 
     if (text.startsWith('```', index)) {
-      const widget = widgetFence(text, index);
+      const widget = readWidgetFence(text, index);
       if (widget) {
         // График или тренажёр: блок готов, когда дописано его JSON-описание.
-        if (widget.end === -1) return `${tidy(text.slice(0, index))}\n\n\`\`\`${PENDING_PREFIX}${widget.kind}\n\n\`\`\``;
-        const rest = text.slice(widget.end);
-        if (/^\s*`{0,2}$/.test(rest)) return text.slice(0, widget.end); // закрывающая строка ``` ещё печатается
-        const closing = CLOSING_FENCE.exec(rest);
-        lateCloser = !closing;
-        index = widget.end + (closing?.[0].length ?? 0);
+        if (widget.bodyEnd === -1) {
+          return `${tidy(text.slice(0, index))}\n\n\`\`\`${PENDING_PREFIX}${widget.kind}\n\n\`\`\``;
+        }
+        if (/^\s*`{0,2}$/.test(text.slice(widget.bodyEnd))) return text.slice(0, widget.bodyEnd); // закрывающая строка ещё печатается
+        lateCloser = !widget.closed;
+        index = widget.end;
         continue;
       }
       const lineEnd = text.indexOf('\n', index);
@@ -72,14 +72,6 @@ export function stablePart(text) {
     }
   }
   return tidy(text);
-}
-
-/** Если с позиции start начинается блок графика или тренажёра — его вид и конец описания (-1: не дописано). */
-function widgetFence(text, start) {
-  const lineEnd = text.indexOf('\n', start);
-  if (lineEnd === -1) return null;
-  const kind = text.slice(start + 3, lineEnd).trim().toLowerCase();
-  return isWidget(kind) ? { kind, end: jsonObjectEnd(text, lineEnd + 1) } : null;
 }
 
 /** Недописанный блок обычного кода показываем как есть; пока не дописано даже название — прячем. */

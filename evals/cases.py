@@ -48,9 +48,9 @@ CASES = [
     ]),
     Case("тренировка: уравнения", "Линейные уравнения, 7 класс", "practice", [*RUSSIAN, c.has_block("trainer", min_tasks=4)]),
     Case("наглядно: парабола", "Как a, b и c меняют параболу", "visual", [
-        *RUSSIAN, c.has_block("plot", with_params=True), c.words_between(10, 300),
+        *RUSSIAN, c.has_block("plot", with_sliders=True), c.words_between(10, 300),
     ]),
-    Case("наглядно: синус", "Синус на единичной окружности", "visual", [*RUSSIAN, c.has_block("plot", with_params=True)]),
+    Case("наглядно: синус", "Синус на единичной окружности", "visual", [*RUSSIAN, c.has_block("plot", with_sliders=True)]),
     Case("проверка: есть ошибка", "2x + 6 = 10, у меня получилось x = 8", "check", [
         *RUSSIAN, c.starts_with("Есть ошибка"), c.contains("x = 2", "x=2"),
     ]),

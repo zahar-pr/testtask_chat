@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { decimalsFor, formatNumber, niceTicks } from '../../static/js/widgets/format.js';
+import { decimalsFor, formatNumber, niceTicks } from '../../static/js/math/format.js';
 import { ACCESS_KEY, MESSAGE, checkAccessKey, checkMessage } from '../../static/js/validation.js';
 
 test('числа пишутся по-русски: запятая, настоящий минус, без хвостовых нулей', () => {

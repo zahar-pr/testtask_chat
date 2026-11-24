@@ -2,7 +2,7 @@
 // Находит в обычном тексте математические выражения и показывает их в настоящей записи —
 // в предпросмотре над полем ввода и в отправленных вопросах. Сам текст вопроса при этом
 // не меняется: модель получает ровно то, что набрано.
-import { GREEK, ExprError, parse } from '../widgets/expr.js';
+import { GREEK, ExprError, parse } from '../math/expr.js';
 import { renderMath } from './math.js';
 
 const RELATIONS = { '=': '=', '<': '<', '>': '>', '<=': '\\le', '>=': '\\ge', '!=': '\\ne', '≤': '\\le', '≥': '\\ge', '≠': '\\ne' };
@@ -24,7 +24,7 @@ const isSum = (node) => node.type === 'binary' && (node.op === '+' || node.op ==
 const isAtom = (node) => node.type === 'number' || node.type === 'variable' || node.type === 'constant';
 const inParens = (text) => `\\left(${text}\\right)`;
 
-/** Дерево выражения (см. widgets/expr.js) → запись LaTeX. Скобки ставятся только там, где нужны. */
+/** Дерево выражения (см. math/expr.js) → запись LaTeX. Скобки ставятся только там, где нужны. */
 export function toLatex(node) {
   switch (node.type) {
     case 'number':

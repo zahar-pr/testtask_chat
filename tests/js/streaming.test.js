@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { stablePart } from '../../static/js/render/streaming.js';
-import { jsonObjectEnd, parseSpec } from '../../static/js/widgets/index.js';
+import { jsonObjectEnd, splitWidgetBlocks } from '../../static/js/render/fences.js';
+import { parseSpec } from '../../static/js/widgets/util.js';
 
 const PLOT = '{"x": [0, 1], "functions": [{"expr": "x", "label": "a } b ``` c"}]}';
 

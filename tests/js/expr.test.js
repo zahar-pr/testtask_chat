@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { ExprError, compile, compileValue, parse } from '../../static/js/widgets/expr.js';
+import { ExprError, compile, compileValue, parse } from '../../static/js/math/expr.js';
 
 const value = (source, scope = {}) => compile(source, Object.keys(scope))(scope);
 const near = (actual, expected) => assert.ok(Math.abs(actual - expected) < 1e-9, `${actual} ≠ ${expected}`);

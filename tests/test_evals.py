@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+
 from evals import checks as c
-from evals.answer import parse_answer
+from evals.answer import node_command, parse_answer
 from evals.cases import CASES
+
+# Блоки разбирает код интерфейса, поэтому нужен Node.js; без него тесты пропускаются.
+pytestmark = pytest.mark.skipif(node_command() is None, reason="нужен Node.js (или EVALS_NODE)")
 
 LESSON = """### Зачем это нужно
 Чтобы узнать, сколько корней у уравнения.
@@ -37,9 +42,8 @@ def passed(check, text: str) -> bool:
 def test_answer_parsing_tolerates_what_the_frontend_tolerates():
     answer = parse_answer(LESSON)
 
-    assert [block.kind for block in answer.blocks] == ["plot", "trainer"]
-    assert all(block.spec for block in answer.blocks)  # забытая закрывающая строка и одиночная «\» не мешают
-    assert len(answer.blocks[1].spec["tasks"]) == 3
+    assert [(block.kind, block.error) for block in answer.blocks] == [("plot", None), ("trainer", None)]
+    assert answer.blocks[1].tasks == 3  # забытая закрывающая строка и одиночная обратная черта не мешают
     assert "Парабола пересекает ось" in answer.prose and '"expr"' not in answer.prose
     assert len(answer.headings) == 9
 
@@ -61,7 +65,11 @@ def test_broken_blocks_are_caught():
     assert not passed(c.blocks_are_valid, '```plot\n{"functions": [{"expr": "x"}]}\n```')  # нет границ
     assert not passed(c.blocks_are_valid, '```plot\n{"x": [0, 1], "functions": [{"expr": "\\\\frac{1}{x}"}]}\n```')
     assert not passed(c.blocks_are_valid, '```trainer\n{"tasks": [{"question": "?", "options": ["а", "б"], "answer": 3}]}\n```')
-    assert not passed(c.has_block("plot", with_params=True), '```plot\n{"x": [0, 1], "functions": [{"expr": "x"}]}\n```')
+    assert not passed(c.has_block("plot", with_sliders=True), '```plot\n{"x": [0, 1], "functions": [{"expr": "x"}]}\n```')
+    assert not passed(c.blocks_are_valid, '```plot\n{"x": [0, 1], "functions": [{"expr": "foo(x)"}]}\n```')  # неизвестная функция
+    assert not passed(c.blocks_are_valid, '```plot\n{"x": [3, 1], "functions": [{"expr": "x"}]}\n```')  # границы наоборот
+    # а вот это интерфейс понимает: граница выражением, координата списком из одного элемента
+    assert passed(c.blocks_are_valid, '```plot\n{"x": [0, "2*pi"], "points": [{"x": ["cos(1)"], "y": 0}]}\n```')
     assert not passed(c.has_block("trainer", min_tasks=4), LESSON)
 
 
