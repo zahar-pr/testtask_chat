@@ -1,17 +1,27 @@
-"""Сценарий чата: вопрос пользователя → ответ модели → запись пары в историю."""
+"""Сценарий чата: вопрос пользователя → ответ модели по частям → запись пары в историю."""
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from app.chat.messages import Message, MessageRepository, NewMessage
 from app.chat.prompt import SYSTEM_PROMPT
 from app.clock import utc_now
-from app.llm.base import ChatTurn, LLMClient
+from app.llm.base import ChatTurn, LLMClient, LLMError, LLMFailure
+
+
+@dataclass(frozen=True)
+class AnswerChunk:
+    """Очередная часть ответа, только что полученная от модели."""
+
+    text: str
 
 
 @dataclass(frozen=True)
 class Exchange:
+    """Завершённая и сохранённая пара «вопрос — ответ»."""
+
     user: Message
     assistant: Message
 
@@ -25,11 +35,11 @@ class ChatService:
     def history(self) -> list[Message]:
         return self._messages.list_all()
 
-    def send(self, text: str) -> Exchange:
-        """Спросить модель и сохранить вопрос с ответом.
+    def send(self, text: str) -> Iterator[AnswerChunk | Exchange]:
+        """Спросить модель: сначала идут части ответа, последним — сохранённая пара.
 
-        В историю попадают только завершённые пары: если модель не ответила, исключение
-        уходит наверх, а в базе ничего не меняется — вопрос можно просто отправить заново.
+        В историю попадают только завершённые пары. Если модель не ответила или ответ
+        оборвался (LLMError), в базе ничего не меняется — вопрос можно отправить заново.
         """
         asked_at = utc_now()
         # В истории лежат только пары «вопрос — ответ», поэтому контекст всегда начинается с вопроса.
@@ -37,12 +47,19 @@ class ChatService:
         turns = [ChatTurn(message.role, message.text) for message in context]
         turns.append(ChatTurn("user", text))
 
-        answer = self._llm.generate(SYSTEM_PROMPT, turns)
+        chunks: list[str] = []
+        for chunk in self._llm.stream(SYSTEM_PROMPT, turns):
+            chunks.append(chunk)
+            yield AnswerChunk(chunk)
+
+        answer = "".join(chunks).strip()
+        if not answer:
+            raise LLMError(LLMFailure.NO_ANSWER, "модель вернула пустой текст")
 
         user, assistant = self._messages.add_many(
             [NewMessage("user", text, asked_at), NewMessage("assistant", answer, utc_now())]
         )
-        return Exchange(user=user, assistant=assistant)
+        yield Exchange(user=user, assistant=assistant)
 
     def clear(self) -> None:
         self._messages.delete_all()

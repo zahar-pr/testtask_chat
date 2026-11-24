@@ -6,13 +6,18 @@ from fastapi.testclient import TestClient
 
 from app.llm.base import LLMError, LLMFailure
 from app.main import create_app
+from tests.conftest import sse_events
 
 
-def test_send_returns_and_stores_question_with_answer(authed, llm):
+def test_send_streams_answer_then_stores_question_with_answer(authed, llm):
     response = authed.post("/api/messages", json={"text": "  Сколько будет 2+2?  "})
 
     assert response.status_code == 201
-    body = response.json()
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = sse_events(response)
+    assert [name for name, _ in events] == ["delta", "delta", "done"]
+    body = events[-1][1]
+    assert "".join(data["text"] for name, data in events if name == "delta") == body["assistant"]["text"]
     assert body["user"]["text"] == "Сколько будет 2+2?"
     assert body["assistant"]["role"] == "assistant" and "$x = 1$" in body["assistant"]["text"]
     for message in (body["user"], body["assistant"]):
@@ -43,6 +48,19 @@ def test_llm_failure_is_reported_and_leaves_history_untouched(authed, llm):
     assert authed.get("/api/messages").json()["messages"] == []
 
 
+def test_answer_cut_off_midway_ends_with_error_event_and_is_not_stored(authed, llm):
+    llm.error_midway = LLMError(LLMFailure.UNAVAILABLE, "connection reset")
+
+    response = authed.post("/api/messages", json={"text": "2+2?"})
+
+    assert response.status_code == 201  # заголовки ушли до сбоя — об ошибке сообщает событие
+    events = sse_events(response)
+    assert [name for name, _ in events] == ["delta", "error"]
+    assert events[-1][1]["code"] == "llm_unavailable"
+    assert "reset" not in events[-1][1]["message"]
+    assert authed.get("/api/messages").json()["messages"] == []
+
+
 def test_history_survives_restart(authed, settings, llm):
     authed.post("/api/messages", json={"text": "Что такое предел?"})
 
@@ -68,8 +86,10 @@ def test_clear_history(authed):
     assert authed.get("/api/messages").json()["messages"] == []
 
 
-def test_index_and_security_headers(client):
+def test_index_and_security_headers(client, authed):
+    for response in (client.get("/"), authed.post("/api/messages", json={"text": "2+2?"})):
+        assert response.status_code in (200, 201)
+        assert "default-src 'self'" in response.headers["content-security-policy"]
     response = client.get("/")
-    assert response.status_code == 200
     assert "default-src 'self'" in response.headers["content-security-policy"]
     assert response.headers["x-content-type-options"] == "nosniff"

@@ -82,6 +82,16 @@
 .typing__dot:nth-child(3) { animation-delay: .3s; }
 .typing__label { margin-left: 6px; font-size: 14px; color: var(--ink-faint); }
 
+/* Ответ ещё печатается: пульсирующая точка в конце текста. */
+.message.is-streaming .prose:empty::after,
+.message.is-streaming .prose > :last-child:not(ol, ul, pre, .math-display)::after,
+.message.is-streaming .prose > :is(ol, ul):last-child > li:last-child > :last-child:not(ol, ul, pre, .math-display)::after {
+  content: ''; display: inline-block; width: 9px; height: 9px; margin-left: 5px;
+  border-radius: 50%; background: var(--accent); animation: pulse 1s ease-in-out infinite;
+}
+.message.is-streaming .prose:empty::after { margin: 8px 0 0; }
+
+@keyframes pulse { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
 @keyframes blink { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 @keyframes appear { from { opacity: 0; transform: translateY(6px); } }
 

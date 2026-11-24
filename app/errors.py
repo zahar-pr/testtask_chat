@@ -62,6 +62,12 @@ _LLM_RESPONSES: dict[LLMFailure, tuple[int, str]] = {
 }
 
 
+def describe_llm_error(error: LLMError) -> tuple[int, str, str]:
+    """HTTP-статус, код и текст для пользователя по сбою модели."""
+    status_code, message = _LLM_RESPONSES[error.failure]
+    return status_code, f"llm_{error.failure.value}", message
+
+
 def _error_response(status_code: int, code: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
     return JSONResponse({"error": {"code": code, "message": message}}, status_code=status_code, headers=headers)
 
@@ -74,8 +80,8 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(LLMError)
     async def handle_llm_error(_: Request, error: LLMError) -> JSONResponse:
         logger.warning("Сбой языковой модели (%s): %s", error.failure.value, error)
-        status_code, message = _LLM_RESPONSES[error.failure]
-        return _error_response(status_code, f"llm_{error.failure.value}", message)
+        status_code, code, message = describe_llm_error(error)
+        return _error_response(status_code, code, message)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, error: RequestValidationError) -> JSONResponse:

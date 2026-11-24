@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Literal, Protocol
@@ -31,6 +31,10 @@ class LLMError(Exception):
 
 
 class LLMClient(Protocol):
-    def generate(self, system_prompt: str, turns: Sequence[ChatTurn]) -> str:
-        """Вернуть ответ модели на диалог `turns` или бросить LLMError."""
+    def stream(self, system_prompt: str, turns: Sequence[ChatTurn]) -> Iterator[str]:
+        """Отдавать ответ модели на диалог `turns` по частям, по мере генерации.
+
+        Бросает LLMError — до первой части, если модель не ответила вовсе,
+        или посреди потока, если ответ оборвался.
+        """
         ...

@@ -1,9 +1,10 @@
-"""Клиент Google Gemini API (REST, generateContent)."""
+"""Клиент Google Gemini API (REST, streamGenerateContent: ответ приходит по частям)."""
 
 from __future__ import annotations
 
+import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 
 import httpx
 
@@ -29,13 +30,14 @@ class GeminiClient:
         if not models:
             raise ValueError("нужна хотя бы одна модель")
         self._models = list(models)
+        # Таймаут — на ожидание очередной части ответа, а не на весь ответ целиком.
         self._http = http_client or httpx.Client(timeout=timeout_seconds)
         self._headers = {"x-goog-api-key": api_key}
 
     def close(self) -> None:
         self._http.close()
 
-    def generate(self, system_prompt: str, turns: Sequence[ChatTurn]) -> str:
+    def stream(self, system_prompt: str, turns: Sequence[ChatTurn]) -> Iterator[str]:
         payload = {
             "system_instruction": {"parts": [{"text": system_prompt}]},
             "contents": [
@@ -45,33 +47,51 @@ class GeminiClient:
         }
         last_error: LLMError | None = None
         for model in self._models:
+            started = False
             try:
-                return self._request(model, payload)
+                for chunk in self._stream_model(model, payload):
+                    started = True
+                    yield chunk
+                return
             except LLMError as error:
-                if error.failure in _FATAL:
+                # Запасная модель выручает, только пока пользователю ещё ничего не показано:
+                # иначе к началу одного ответа приклеилось бы продолжение другого.
+                if started or error.failure in _FATAL:
                     raise
                 logger.warning("Модель %s не ответила (%s): %s", model, error.failure.value, error)
                 last_error = error
         assert last_error is not None
         raise last_error
 
-    def _request(self, model: str, payload: dict) -> str:
+    def _stream_model(self, model: str, payload: dict) -> Iterator[str]:
+        url = f"{API_ROOT}/models/{model}:streamGenerateContent"
+        got_text = False
+        last_event: dict = {}
         try:
-            response = self._http.post(
-                f"{API_ROOT}/models/{model}:generateContent", json=payload, headers=self._headers
-            )
+            with self._http.stream(
+                "POST", url, params={"alt": "sse"}, json=payload, headers=self._headers
+            ) as response:
+                if response.status_code != 200:
+                    response.read()
+                    raise LLMError(
+                        _failure_for_status(response.status_code), f"{model}: {_error_detail(response)}"
+                    )
+                for line in response.iter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    last_event = json.loads(line[len("data:"):])
+                    if text := _event_text(last_event):
+                        got_text = True
+                        yield text
         except httpx.TimeoutException as error:
             raise LLMError(LLMFailure.TIMEOUT, f"{model}: таймаут") from error
         except httpx.HTTPError as error:
             raise LLMError(LLMFailure.UNAVAILABLE, f"{model}: {error!r}") from error
-
-        if response.status_code != 200:
-            raise LLMError(_failure_for_status(response.status_code), f"{model}: {_error_detail(response)}")
-
-        try:
-            return _extract_text(response.json())
-        except ValueError as error:  # ответ не в формате JSON
+        except ValueError as error:  # часть ответа не в формате JSON
             raise LLMError(LLMFailure.UNAVAILABLE, f"{model}: неразборчивый ответ") from error
+
+        if not got_text:
+            raise LLMError(LLMFailure.NO_ANSWER, f"{model}: пустой ответ ({_empty_reason(last_event)})")
 
 
 def _failure_for_status(status_code: int) -> LLMFailure:
@@ -90,15 +110,14 @@ def _error_detail(response: httpx.Response) -> str:
         return f"{response.status_code} {response.text[:200]}"
 
 
-def _extract_text(body: dict) -> str:
-    candidates = body.get("candidates") or []
-    if not candidates:
-        reason = (body.get("promptFeedback") or {}).get("blockReason", "нет вариантов ответа")
-        raise LLMError(LLMFailure.NO_ANSWER, f"пустой ответ: {reason}")
+def _event_text(event: dict) -> str:
+    candidates = event.get("candidates") or [{}]
+    parts = (candidates[0].get("content") or {}).get("parts") or []
+    # Части с пометкой thought — рассуждения модели, пользователю их не показываем.
+    return "".join(part.get("text", "") for part in parts if not part.get("thought"))
 
-    candidate = candidates[0]
-    parts = (candidate.get("content") or {}).get("parts") or []
-    text = "".join(part.get("text", "") for part in parts if not part.get("thought")).strip()
-    if not text:
-        raise LLMError(LLMFailure.NO_ANSWER, f"пустой ответ: {candidate.get('finishReason')}")
-    return text
+
+def _empty_reason(event: dict) -> str:
+    block_reason = (event.get("promptFeedback") or {}).get("blockReason")
+    finish_reason = (event.get("candidates") or [{}])[0].get("finishReason")
+    return str(block_reason or finish_reason or "нет вариантов ответа")

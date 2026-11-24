@@ -1,8 +1,9 @@
-// Экран чата: история, отправка сообщения, ожидание и ошибки ответа, очистка, выход.
+// Экран чата: история, отправка сообщения, «печать» ответа по мере генерации, ошибки, очистка, выход.
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
 import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
+import { stablePart } from '../render/streaming.js';
 import { MESSAGE, checkMessage } from '../validation.js';
 
 const SUGGESTIONS = [
@@ -13,6 +14,13 @@ const SUGGESTIONS = [
 ];
 
 const SLOW_ANSWER_MS = 10_000;
+
+// «Печать» ответа: модель присылает текст неровными порциями, а на экран он выходит плавно.
+// Каждый кадр допечатывается доля накопившегося — чем больше отставание, тем быстрее печать.
+const TYPING_FRAME_MS = 32;
+const TYPING_CATCH_UP = 12; // за кадр — 1/12 накопившегося текста
+const TYPING_MIN_STEP = 2; // но не меньше двух символов
+const FOLLOW_DISTANCE_PX = 80; // лента следует за текстом, пока пользователь у её конца
 
 export function createChatView({ onSessionLost, onLogout }) {
   const view = $('#chat-view');
@@ -60,6 +68,7 @@ export function createChatView({ onSessionLost, onLogout }) {
   }
 
   const scrollToEnd = () => scroller.scrollTo({ top: scroller.scrollHeight });
+  const isNearEnd = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < FOLLOW_DISTANCE_PX;
 
   /** true, если ошибка означает, что сессия закончилась и мы ушли на экран входа. */
   function sessionLost(error) {
@@ -104,6 +113,49 @@ export function createChatView({ onSessionLost, onLogout }) {
         label,
       ),
     );
+  }
+
+  /** Ответ, который ещё генерируется: принимает части текста и плавно их «допечатывает». */
+  function streamingAnswer() {
+    const prose = el('div', { class: 'prose' });
+    const node = assistantMessage(prose);
+    node.classList.add('is-streaming');
+
+    let received = ''; // всё, что уже пришло от сервера
+    let shown = 0; // сколько символов из этого уже на экране
+    let timer = null;
+    let onSettled = null;
+
+    function tick() {
+      timer = null;
+      const backlog = received.length - shown;
+      if (backlog > 0) {
+        // Во вкладке на заднем плане таймеры редкие — показываем всё сразу, чтобы не отставать.
+        const step = document.hidden ? backlog : Math.max(TYPING_MIN_STEP, Math.ceil(backlog / TYPING_CATCH_UP));
+        shown = Math.min(received.length, shown + step);
+
+        const follow = isNearEnd(); // если пользователь отмотал ленту вверх — не дёргаем её
+        prose.replaceChildren(renderMarkdown(stablePart(received.slice(0, shown))));
+        if (follow) scrollToEnd();
+      }
+      if (shown < received.length) timer = setTimeout(tick, TYPING_FRAME_MS);
+      else onSettled?.();
+    }
+
+    return {
+      node,
+      push(delta) {
+        received += delta;
+        if (timer === null) timer = setTimeout(tick, TYPING_FRAME_MS);
+      },
+      /** Дождаться, пока всё полученное будет допечатано. */
+      settled() {
+        return shown >= received.length ? Promise.resolve() : new Promise((resolve) => { onSettled = resolve; });
+      },
+      stop() {
+        clearTimeout(timer);
+      },
+    };
   }
 
   function markFailed(draft, text, reason) {
@@ -162,16 +214,29 @@ export function createChatView({ onSessionLost, onLogout }) {
     refresh();
     scrollToEnd();
 
+    let answer = null;
     try {
-      const exchange = await api.sendMessage(rawText);
-      const question = storedMessage(exchange.user);
-      draft.replaceWith(question);
-      const answer = storedMessage(exchange.assistant);
-      answer.classList.add('is-new');
-      typing.replaceWith(answer);
-      // Показываем вопрос у верхнего края: длинный ответ читается с начала, а не с конца.
-      question.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const exchange = await api.sendMessage(rawText, {
+        onDelta(delta) {
+          if (answer === null) {
+            // Первая часть ответа: «Решаю…» сменяется текстом, который дальше допечатывается.
+            answer = streamingAnswer();
+            typing.replaceWith(answer.node);
+          }
+          answer.push(delta);
+        },
+      });
+      await answer?.settled();
+
+      // Ответ готов и сохранён: заменяем черновики записями из истории (с датой и временем).
+      const follow = isNearEnd();
+      draft.replaceWith(storedMessage(exchange.user));
+      (answer?.node ?? typing).replaceWith(storedMessage(exchange.assistant));
+      if (follow) scrollToEnd();
     } catch (error) {
+      // Оборвавшийся ответ не сохранён на сервере, поэтому убираем и его начало с экрана.
+      answer?.stop();
+      answer?.node.remove();
       typing.remove();
       if (sessionLost(error)) return;
       markFailed(draft, text, error.message);

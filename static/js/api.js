@@ -9,7 +9,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, body) {
+const NETWORK_ERROR = 'Нет связи с сервером. Проверьте подключение и попробуйте ещё раз.';
+const STREAM_BROKEN = 'Соединение прервалось, ответ получен не полностью. Попробуйте ещё раз.';
+
+/** Выполнить запрос и вернуть Response; любой неуспех превращается в ApiError. */
+async function call(method, path, body) {
   let response;
   try {
     response = await fetch(path, {
@@ -19,20 +23,52 @@ async function request(method, path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new ApiError(0, 'network_error', 'Нет связи с сервером. Проверьте подключение и попробуйте ещё раз.');
+    throw new ApiError(0, 'network_error', NETWORK_ERROR);
   }
 
-  if (response.status === 204) return null;
-
-  const payload = await response.json().catch(() => null);
   if (!response.ok) {
+    const payload = await response.json().catch(() => null);
     throw new ApiError(
       response.status,
       payload?.error?.code ?? 'unknown_error',
       payload?.error?.message ?? `Сервер ответил ошибкой (${response.status}). Попробуйте ещё раз.`,
     );
   }
-  return payload;
+  return response;
+}
+
+async function request(method, path, body) {
+  const response = await call(method, path, body);
+  return response.status === 204 ? null : response.json();
+}
+
+/** Читать поток Server-Sent Events как последовательность { event, data }. */
+async function* readEvents(response) {
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) return;
+      buffer += value;
+
+      let end;
+      while ((end = buffer.indexOf('\n\n')) !== -1) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+
+        let event = 'message';
+        let data = '';
+        for (const line of block.split('\n')) {
+          if (line.startsWith('event: ')) event = line.slice(7);
+          else if (line.startsWith('data: ')) data += line.slice(6);
+        }
+        yield { event, data: JSON.parse(data) };
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
 }
 
 export const login = (accessKey) => request('POST', '/api/auth/login', { access_key: accessKey });
@@ -40,5 +76,23 @@ export const logout = () => request('POST', '/api/auth/logout');
 export const isAuthenticated = async () => (await request('GET', '/api/auth/session')).authenticated;
 
 export const listMessages = async () => (await request('GET', '/api/messages')).messages;
-export const sendMessage = (text) => request('POST', '/api/messages', { text });
 export const clearMessages = () => request('DELETE', '/api/messages');
+
+/**
+ * Отправить вопрос. Ответ модели приходит потоком: каждая новая часть передаётся в onDelta,
+ * а результат функции — сохранённая пара { user, assistant }.
+ */
+export async function sendMessage(text, { onDelta } = {}) {
+  const response = await call('POST', '/api/messages', { text });
+  try {
+    for await (const { event, data } of readEvents(response)) {
+      if (event === 'delta') onDelta?.(data.text);
+      else if (event === 'done') return data;
+      else if (event === 'error') throw new ApiError(502, data.code, data.message);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(0, 'network_error', STREAM_BROKEN);
+  }
+  throw new ApiError(0, 'network_error', STREAM_BROKEN); // поток закончился без события done
+}

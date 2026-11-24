@@ -15,9 +15,17 @@ def make_client(handler, models=("primary", "backup")) -> GeminiClient:
     return GeminiClient("secret", models, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
 
 
-def ok(text: str) -> httpx.Response:
-    return httpx.Response(200, json={"candidates": [{"content": {"parts": [
-        {"text": "черновик рассуждений", "thought": True}, {"text": text}]}, "finishReason": "STOP"}]})
+def sse(*events: dict) -> httpx.Response:
+    body = "".join(f"data: {json.dumps(event, ensure_ascii=False)}\r\n\r\n" for event in events)
+    return httpx.Response(200, content=body.encode(), headers={"content-type": "text/event-stream"})
+
+
+def part(text: str, **extra) -> dict:
+    return {"candidates": [{"content": {"parts": [{"text": text, **extra}]}}]}
+
+
+def answer(client: GeminiClient) -> str:
+    return "".join(client.stream("p", TURNS))
 
 
 def test_sends_prompt_history_and_key_in_header():
@@ -27,26 +35,50 @@ def test_sends_prompt_history_and_key_in_header():
         seen["url"] = str(request.url)
         seen["key"] = request.headers["x-goog-api-key"]
         seen["body"] = json.loads(request.content)
-        return ok("6")
+        return sse(part("6"))
 
-    assert make_client(handler).generate("Ты математик", TURNS) == "6"
-    assert seen["url"].endswith("/models/primary:generateContent") and "secret" not in seen["url"]
+    assert "".join(make_client(handler).stream("Ты математик", TURNS)) == "6"
+    assert "/models/primary:streamGenerateContent" in seen["url"] and "secret" not in seen["url"]
     assert seen["key"] == "secret"
     assert seen["body"]["system_instruction"]["parts"][0]["text"] == "Ты математик"
     assert [c["role"] for c in seen["body"]["contents"]] == ["user", "model", "user"]
+
+
+def test_yields_answer_in_parts_and_skips_model_thoughts():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return sse(part("черновик рассуждений", thought=True), part("x = "), part("3"),
+                   {"candidates": [{"finishReason": "STOP"}]})
+
+    assert list(make_client(handler).stream("p", TURNS)) == ["x = ", "3"]
 
 
 def test_falls_back_to_next_model_when_primary_is_overloaded():
     asked = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        asked.append(request.url.path.split("/")[-1])
+        asked.append(request.url.path.split("/")[-1].split(":")[0])
         if "primary" in request.url.path:
             return httpx.Response(503, json={"error": {"message": "overloaded"}})
-        return ok("ответ запасной модели")
+        return sse(part("ответ запасной модели"))
 
-    assert make_client(handler).generate("p", TURNS) == "ответ запасной модели"
-    assert asked == ["primary:generateContent", "backup:generateContent"]
+    assert answer(make_client(handler)) == "ответ запасной модели"
+    assert asked == ["primary", "backup"]
+
+
+def test_no_fallback_once_answer_has_started():
+    asked = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        asked.append(request.url.path)
+        body = f"data: {json.dumps(part('начало'))}\n\ndata: это не JSON\n\n"
+        return httpx.Response(200, content=body.encode())
+
+    stream = make_client(handler).stream("p", TURNS)
+    assert next(stream) == "начало"
+    with pytest.raises(LLMError) as caught:
+        next(stream)
+    assert caught.value.failure is LLMFailure.UNAVAILABLE
+    assert len(asked) == 1  # продолжение от другой модели к начатому ответу не приклеиваем
 
 
 @pytest.mark.parametrize(
@@ -61,7 +93,7 @@ def test_http_errors_are_classified(status, failure, attempts):
         return httpx.Response(status, json={"error": {"message": "nope"}})
 
     with pytest.raises(LLMError) as caught:
-        make_client(handler).generate("p", TURNS)
+        answer(make_client(handler))
     assert caught.value.failure is failure
     assert len(calls) == attempts  # с неверным ключом запасную модель не дёргаем
 
@@ -71,12 +103,13 @@ def test_timeout_and_blocked_answer():
         raise httpx.ReadTimeout("slow", request=request)
 
     with pytest.raises(LLMError) as caught:
-        make_client(timeout).generate("p", TURNS)
+        answer(make_client(timeout))
     assert caught.value.failure is LLMFailure.TIMEOUT
 
     def blocked(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"promptFeedback": {"blockReason": "SAFETY"}})
+        return sse({"promptFeedback": {"blockReason": "SAFETY"}})
 
     with pytest.raises(LLMError) as caught:
-        make_client(blocked).generate("p", TURNS)
+        answer(make_client(blocked))
     assert caught.value.failure is LLMFailure.NO_ANSWER
+    assert "SAFETY" in str(caught.value)

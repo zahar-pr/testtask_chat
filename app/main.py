@@ -6,9 +6,11 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import MutableHeaders
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.auth.rate_limit import LoginRateLimiter
 from app.auth.router import router as auth_router
@@ -36,6 +38,31 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
 }
+
+
+class SecurityHeadersMiddleware:
+    """Добавляет заголовки безопасности ко всем ответам.
+
+    Работает на уровне ASGI-сообщений и не трогает тело ответа, поэтому не задерживает
+    потоковую выдачу ответа модели.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        async def send_with_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SECURITY_HEADERS.items():
+                    headers.setdefault(name, value)
+            await send(message)
+
+        await self._app(scope, receive, send_with_headers)
 
 
 def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -> FastAPI:
@@ -78,12 +105,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.include_router(auth_router)
     app.include_router(chat_router)
 
-    @app.middleware("http")
-    async def add_security_headers(request: Request, call_next):
-        response = await call_next(request)
-        for name, value in SECURITY_HEADERS.items():
-            response.headers.setdefault(name, value)
-        return response
+    app.add_middleware(SecurityHeadersMiddleware)
 
     @app.get("/api/health", include_in_schema=False)
     def health() -> dict[str, str]:
