@@ -2,6 +2,7 @@
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
 import { renderInlineMarkdown } from '../render/markdown.js';
+import { confirmAction } from './confirm.js';
 
 const OUTCOME_LABELS = { solved: 'не с первой попытки', revealed: 'с подсмотренным решением' };
 
@@ -77,7 +78,12 @@ export function createProgressPanel({ onReview, onSessionLost }) {
     onReview();
   });
   resetButton.addEventListener('click', async () => {
-    if (!confirm('Сбросить весь прогресс? Результаты тренажёров будут удалены.')) return;
+    const confirmed = await confirmAction({
+      title: 'Сбросить прогресс?',
+      text: 'Результаты всех тренажёров будут удалены без возможности восстановления.',
+      action: 'Сбросить',
+    });
+    if (!confirmed) return;
     await api.resetProgress().catch(() => {});
     load();
   });

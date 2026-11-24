@@ -21,13 +21,14 @@ class IssuedSession:
 
 class AuthService:
     def __init__(self, access_key: str, sessions: SessionRepository, session_ttl: timedelta) -> None:
-        self._access_key = access_key.encode()
+        self._access_key_hash = _digest(access_key)
         self._sessions = sessions
         self._session_ttl = session_ttl
 
     def login(self, candidate_key: str) -> IssuedSession:
-        # Сравнение за постоянное время: по времени ответа нельзя подобрать ключ посимвольно.
-        if not hmac.compare_digest(candidate_key.encode(), self._access_key):
+        # Сравниваем хеши одинаковой длины за постоянное время: по времени ответа нельзя
+        # ни подобрать ключ посимвольно, ни узнать его длину.
+        if not hmac.compare_digest(_digest(candidate_key), self._access_key_hash):
             raise InvalidAccessKey()
 
         now = utc_now()
@@ -47,5 +48,10 @@ class AuthService:
             self._sessions.delete(_hash(token))
 
 
+def _digest(secret: str) -> bytes:
+    return hashlib.sha256(secret.encode()).digest()
+
+
 def _hash(token: str) -> str:
+    """Под этим значением сессия хранится в базе: сам токен есть только у браузера."""
     return hashlib.sha256(token.encode()).hexdigest()

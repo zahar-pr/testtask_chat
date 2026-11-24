@@ -9,8 +9,6 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.datastructures import MutableHeaders
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.auth.rate_limit import LoginRateLimiter
 from app.auth.router import router as auth_router
@@ -26,46 +24,9 @@ from app.llm.base import LLMClient
 from app.llm.gemini import GeminiClient
 from app.progress.repository import ProgressRepository
 from app.progress.router import router as progress_router
+from app.security import SameOriginMiddleware, SecurityHeadersMiddleware
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-
-SECURITY_HEADERS = {
-    # Скрипты, стили и шрифты — только свои. 'unsafe-inline' для стилей нужен KaTeX:
-    # он расставляет размеры и отступы в формулах через атрибут style.
-    "Content-Security-Policy": (
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; font-src 'self'; connect-src 'self'; "
-        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-    ),
-    "X-Content-Type-Options": "nosniff",
-    "Referrer-Policy": "no-referrer",
-}
-
-
-class SecurityHeadersMiddleware:
-    """Добавляет заголовки безопасности ко всем ответам.
-
-    Работает на уровне ASGI-сообщений и не трогает тело ответа, поэтому не задерживает
-    потоковую выдачу ответа модели.
-    """
-
-    def __init__(self, app: ASGIApp) -> None:
-        self._app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
-
-        async def send_with_headers(message: Message) -> None:
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                for name, value in SECURITY_HEADERS.items():
-                    headers.setdefault(name, value)
-            await send(message)
-
-        await self._app(scope, receive, send_with_headers)
-
 
 def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -> FastAPI:
     """Фабрика приложения. В тестах сюда передают свои настройки и подставную модель."""
@@ -112,7 +73,8 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
     app.include_router(chat_router)
     app.include_router(progress_router)
 
-    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(SameOriginMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)  # добавлен последним — оборачивает все ответы, включая отказы
 
     @app.get("/api/health", include_in_schema=False)
     def health() -> dict[str, str]:

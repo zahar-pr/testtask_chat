@@ -7,6 +7,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from app.chat.titles import chat_title
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS chats (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,15 +46,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at TEXT NOT NULL
 );
 """
-
-TITLE_MAX_LENGTH = 60
-
-
-def chat_title(first_question: str) -> str:
-    """Название чата — начало первого вопроса."""
-    title = " ".join(first_question.split())
-    return title if len(title) <= TITLE_MAX_LENGTH else title[: TITLE_MAX_LENGTH - 1].rstrip() + "…"
-
 
 class Database:
     """Короткоживущие подключения: одно на операцию, транзакция — на блок `with`."""

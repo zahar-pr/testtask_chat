@@ -1,0 +1,3 @@
+# Сквозные тесты интерфейса в настоящем браузере. После установки: playwright install chromium
+-r requirements-dev.txt
+playwright==1.65.0

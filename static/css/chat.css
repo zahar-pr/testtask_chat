@@ -193,7 +193,7 @@
 .composer__input::placeholder { color: var(--ink-faint); }
 .composer__bar { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
 /* Кнопка и меню заготовок у поля ввода */
-.mode { position: relative; flex: none; display: flex; align-items: center; gap: 2px; }
+.mode { position: relative; flex: 0 1 auto; min-width: 0; display: flex; align-items: center; gap: 2px; }
 .mode__button {
   display: inline-flex; align-items: center; gap: 7px;
   height: 32px; padding: 0 12px 0 9px;
@@ -201,8 +201,11 @@
   background: none; color: var(--ink-soft); cursor: pointer;
   font-size: 12.5px; font-weight: 500; white-space: nowrap;
   transition: border-color .15s, background-color .15s, color .15s;
+  min-width: 0; /* длинное название заготовки сжимается, а не выталкивает кнопку отправки */
 }
+.mode__button > span { overflow: hidden; text-overflow: ellipsis; }
 .mode__button .icon { width: 16px; height: 16px; }
+.mode__clear { flex: none; }
 .mode__button:hover { border-color: var(--accent); color: var(--ink); }
 .mode__button.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-soft-ink); font-weight: 600; }
 .mode__clear {
@@ -257,7 +260,12 @@
 
 @media (max-width: 600px) {
   .chat__actions .button__label { display: none; }
-  .composer__hint { visibility: hidden; }
+  /* В строке под полем ввода тесно: подсказка про Enter не нужна, «Остановить» — одним значком. */
+  .composer__bar { gap: 8px; }
+  .composer__hint { display: none; }
+  .composer__counter { margin-left: auto; }
+  .composer__stop { padding: 0 9px; }
+  .composer__stop .button__label { display: none; }
   .presets { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
   .preset { padding: 12px; }
   .preset__text { font-size: 12px; }

@@ -65,6 +65,22 @@ def test_rate_limiter_window_expires():
     assert limiter.retry_after("ip") == 0
 
 
+def test_requests_from_another_site_are_rejected(client):
+    """Второй рубеж защиты от CSRF: изменяющий запрос с чужим Origin не проходит."""
+    foreign = client.post(
+        "/api/auth/login", json={"access_key": ACCESS_KEY}, headers={"Origin": "https://evil.example"}
+    )
+    assert foreign.status_code == 403
+    assert foreign.json()["error"]["code"] == "cross_site_request"
+    assert "set-cookie" not in foreign.headers
+    assert "default-src 'self'" in foreign.headers["content-security-policy"]  # и у отказа есть заголовки
+
+    own = client.post("/api/auth/login", json={"access_key": ACCESS_KEY}, headers={"Origin": "http://testserver"})
+    assert own.status_code == 204
+    # читать с чужого сайта можно пытаться — ответ браузер всё равно не отдаст (нет CORS-заголовков)
+    assert "access-control-allow-origin" not in client.get("/api/chats", headers={"Origin": "https://evil.example"}).headers
+
+
 def test_logout_revokes_session(authed):
     token = authed.cookies.get("epsilon_session")
     assert authed.post("/api/auth/logout").status_code == 204

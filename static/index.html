@@ -162,15 +162,18 @@
     </div>
   </dialog>
 
-  <dialog id="clear-dialog" class="dialog" aria-labelledby="clear-dialog-title">
+  <!-- Общий диалог подтверждения: текст и название кнопки подставляет views/confirm.js -->
+  <dialog id="confirm-dialog" class="dialog" aria-labelledby="confirm-title">
     <form method="dialog" class="dialog__body">
-      <h2 id="clear-dialog-title" class="dialog__title">Очистить этот чат?</h2>
-      <p class="dialog__text">Чат и все его сообщения будут удалены без возможности восстановления. Остальные чаты останутся.</p>
+      <h2 id="confirm-title" class="dialog__title"></h2>
+      <p id="confirm-text" class="dialog__text"></p>
       <div class="dialog__actions">
         <button type="submit" value="cancel" class="button button--secondary" autofocus>Отмена</button>
-        <button type="submit" value="confirm" class="button button--danger">Очистить</button>
+        <button type="submit" id="confirm-action" value="confirm" class="button button--danger"></button>
       </div>
     </form>
   </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>
