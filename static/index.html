@@ -53,17 +53,26 @@
 
   <!-- Экран 2: чат -->
   <div id="chat-view" class="chat" hidden>
+    <!-- Сохранённые чаты: на широком экране — колонка слева, на телефоне — выезжающая панель -->
+    <aside id="sidebar" class="sidebar" aria-label="Чаты">
+      <button type="button" id="new-chat" class="button button--secondary sidebar__new">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="button__label">Новый чат</span>
+      </button>
+      <h2 class="sidebar__heading">Сохранённые чаты</h2>
+      <ul id="chat-list" class="sidebar__list"></ul>
+      <p id="chat-list-empty" class="sidebar__empty">Здесь появятся ваши чаты — они сохраняются сами.</p>
+    </aside>
+    <div id="sidebar-backdrop" class="sidebar-backdrop" hidden></div>
+
+    <div class="chat__main">
     <header class="chat__header">
       <div class="chat__header-inner">
-        <div class="brand">
-          <div class="logo" aria-hidden="true">ε</div>
-          <div class="brand__text">
-            <h1 class="brand__name">Эпсилон</h1>
-            <p class="brand__tagline">помощник по математике</p>
-          </div>
-        </div>
+        <button type="button" id="sidebar-toggle" class="button button--ghost chat__menu" aria-label="Чаты" title="Чаты" aria-expanded="false" aria-controls="sidebar">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
         <div class="chat__actions">
-          <button type="button" id="clear-button" class="button button--ghost" title="Очистить историю" disabled>
+          <button type="button" id="clear-button" class="button button--ghost" title="Очистить этот чат" disabled>
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>
             <span class="button__label">Очистить</span>
           </button>
@@ -124,12 +133,13 @@
         </div>
       </form>
     </footer>
+    </div>
   </div>
 
   <dialog id="clear-dialog" class="dialog" aria-labelledby="clear-dialog-title">
     <form method="dialog" class="dialog__body">
-      <h2 id="clear-dialog-title" class="dialog__title">Очистить историю?</h2>
-      <p class="dialog__text">Все сообщения будут удалены без возможности восстановления.</p>
+      <h2 id="clear-dialog-title" class="dialog__title">Очистить этот чат?</h2>
+      <p class="dialog__text">Чат и все его сообщения будут удалены без возможности восстановления. Остальные чаты останутся.</p>
       <div class="dialog__actions">
         <button type="submit" value="cancel" class="button button--secondary" autofocus>Отмена</button>
         <button type="submit" value="confirm" class="button button--danger">Очистить</button>

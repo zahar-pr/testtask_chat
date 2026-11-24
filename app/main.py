@@ -16,7 +16,7 @@ from app.auth.rate_limit import LoginRateLimiter
 from app.auth.router import router as auth_router
 from app.auth.service import AuthService
 from app.auth.sessions import SessionRepository
-from app.chat.messages import MessageRepository
+from app.chat.repository import ChatRepository
 from app.chat.router import router as chat_router
 from app.chat.service import ChatService
 from app.config import Settings, get_settings
@@ -98,7 +98,7 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         max_attempts=settings.login_max_attempts, window_seconds=settings.login_window_seconds
     )
     app.state.chat_service = ChatService(
-        messages=MessageRepository(database), llm=llm, context_exchanges=settings.context_exchanges
+        chats=ChatRepository(database), llm=llm, context_exchanges=settings.context_exchanges
     )
 
     register_error_handlers(app)

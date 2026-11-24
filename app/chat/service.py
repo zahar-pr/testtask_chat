@@ -1,4 +1,4 @@
-"""Сценарий чата: вопрос пользователя → ответ модели по частям → запись пары в историю."""
+"""Сценарии чата: список чатов, история, вопрос → ответ модели по частям → запись пары."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from app.chat.messages import Message, MessageRepository, NewMessage
+from app.chat.repository import Chat, ChatRepository, Message, NewMessage
 from app.chat.modes import as_model_input
 from app.chat.prompt import SYSTEM_PROMPT
 from app.clock import utc_now
+from app.db import chat_title
+from app.errors import ChatNotFound
 from app.llm.base import ChatTurn, LLMClient, LLMError, LLMFailure
 
 
@@ -27,8 +29,9 @@ class AnswerRestart:
 
 @dataclass(frozen=True)
 class Exchange:
-    """Завершённая и сохранённая пара «вопрос — ответ»."""
+    """Завершённая и сохранённая пара «вопрос — ответ» и чат, в который она записана."""
 
+    chat: Chat
     user: Message
     assistant: Message
 
@@ -44,17 +47,26 @@ ChatEvent = AnswerChunk | AnswerRestart | Exchange
 
 
 class ChatService:
-    def __init__(self, messages: MessageRepository, llm: LLMClient, context_exchanges: int) -> None:
-        self._messages = messages
+    def __init__(self, chats: ChatRepository, llm: LLMClient, context_exchanges: int) -> None:
+        self._chats = chats
         self._llm = llm
         self._context_exchanges = context_exchanges
 
-    def history(self) -> list[Message]:
-        return self._messages.list_all()
+    def chats(self) -> list[Chat]:
+        return self._chats.list_chats()
 
-    def send(self, text: str, mode: str | None = None) -> Iterator[ChatEvent]:
+    def history(self, chat_id: int) -> list[Message]:
+        self._require(chat_id)
+        return self._chats.list_messages(chat_id)
+
+    def delete(self, chat_id: int) -> None:
+        self._chats.delete_chat(chat_id)
+
+    def send(self, text: str, mode: str | None = None, chat_id: int | None = None) -> Iterator[ChatEvent]:
         """Спросить модель: сначала идут части ответа, последним — сохранённая пара.
 
+        chat_id — чат, в котором задан вопрос; без него вопрос начинает новый чат. Чат создаётся
+        вместе с первой сохранённой парой, поэтому пустых чатов не бывает.
         mode — заготовка, выбранная пользователем: в истории хранится его собственный текст,
         а модель получает запрос с названием режима (и видит режимы прошлых вопросов).
 
@@ -63,8 +75,11 @@ class ChatService:
         вопрос можно отправить заново.
         """
         asked_at = utc_now()
-        # В истории лежат только пары «вопрос — ответ», поэтому контекст всегда начинается с вопроса.
-        context = self._messages.list_recent(self._context_exchanges * 2)
+        context: list[Message] = []
+        if chat_id is not None:
+            self._require(chat_id)
+            # В чате лежат только пары «вопрос — ответ», поэтому контекст всегда начинается с вопроса.
+            context = self._chats.list_recent_messages(chat_id, self._context_exchanges * 2)
         turns = [ChatTurn(message.role, as_model_input(message.text, message.mode)) for message in context]
         turns.append(ChatTurn("user", as_model_input(text, mode)))
 
@@ -87,10 +102,15 @@ class ChatService:
         if not answer:
             raise LLMError(LLMFailure.NO_ANSWER, "модель вернула пустой текст")
 
-        user, assistant = self._messages.add_many(
-            [NewMessage("user", text, asked_at, mode), NewMessage("assistant", answer, utc_now())]
+        chat, (user, assistant) = self._chats.save_exchange(
+            chat_id,
+            chat_title(text),
+            [NewMessage("user", text, asked_at, mode), NewMessage("assistant", answer, utc_now())],
         )
-        yield Exchange(user=user, assistant=assistant)
+        yield Exchange(chat=chat, user=user, assistant=assistant)
 
-    def clear(self) -> None:
-        self._messages.delete_all()
+    def _require(self, chat_id: int) -> Chat:
+        chat = self._chats.get_chat(chat_id)
+        if chat is None:
+            raise ChatNotFound()
+        return chat

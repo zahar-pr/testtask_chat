@@ -11,7 +11,8 @@ from tests.conftest import ACCESS_KEY
 
 
 def test_protected_endpoints_require_session(client):
-    for method, path in [("GET", "/api/messages"), ("POST", "/api/messages"), ("DELETE", "/api/messages")]:
+    for method, path in [("GET", "/api/chats"), ("POST", "/api/chats"), ("GET", "/api/chats/1/messages"),
+                         ("POST", "/api/chats/1/messages"), ("DELETE", "/api/chats/1")]:
         response = client.request(method, path, json={"text": "2+2"} if method == "POST" else None)
         assert response.status_code == 401, (method, path)
         assert response.json()["error"]["code"] == "not_authenticated"
@@ -70,7 +71,7 @@ def test_logout_revokes_session(authed):
 
     authed.cookies.set("epsilon_session", token)  # украденный токен после выхода бесполезен
     assert authed.get("/api/auth/session").json() == {"authenticated": False}
-    assert authed.get("/api/messages").status_code == 401
+    assert authed.get("/api/chats").status_code == 401
 
 
 def test_session_survives_restart(authed, settings, llm):

@@ -12,6 +12,13 @@ export function formatMessageTime(date, now = new Date()) {
   return `${day}, ${timeFormat.format(date)}`;
 }
 
+/** Когда в чате писали в последний раз: сегодня — время, раньше — день. */
+export function formatChatDate(isoString, now = new Date()) {
+  const date = new Date(isoString);
+  if (date.toDateString() === now.toDateString()) return timeFormat.format(date);
+  return date.getFullYear() === now.getFullYear() ? dayFormat.format(date) : dayWithYearFormat.format(date);
+}
+
 /** <time> с машинным значением и полной датой во всплывающей подсказке. */
 export function timeElement(isoString) {
   const date = new Date(isoString);

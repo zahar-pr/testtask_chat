@@ -1,16 +1,30 @@
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 
 from fastapi.testclient import TestClient
 
 from app.llm.base import LLMError, LLMFailure
 from app.main import create_app
-from tests.conftest import sse_events
+from tests.conftest import ACCESS_KEY, ask, done, sse_events
 
 
-def test_send_streams_answer_then_stores_question_with_answer(authed, llm):
-    response = authed.post("/api/messages", json={"text": "  Сколько будет 2+2?  "})
+def chats(client) -> list[dict]:
+    return client.get("/api/chats").json()["chats"]
+
+
+def history(client, chat_id: int) -> list[dict]:
+    return client.get(f"/api/chats/{chat_id}/messages").json()["messages"]
+
+
+# --- Вопрос и ответ ---
+
+
+def test_first_question_streams_answer_and_creates_a_saved_chat(authed, llm):
+    assert chats(authed) == []
+
+    response = ask(authed, "  Сколько будет 2+2?  ")
 
     assert response.status_code == 201
     assert response.headers["content-type"].startswith("text/event-stream")
@@ -23,84 +37,128 @@ def test_send_streams_answer_then_stores_question_with_answer(authed, llm):
     for message in (body["user"], body["assistant"]):
         assert datetime.fromisoformat(message["created_at"].replace("Z", "+00:00")).tzinfo is not None
 
-    history = authed.get("/api/messages").json()["messages"]
-    assert [m["role"] for m in history] == ["user", "assistant"]
-    assert history == [body["user"], body["assistant"]]
+    assert body["chat"]["title"] == "Сколько будет 2+2?"
+    assert chats(authed) == [body["chat"]]
+    assert history(authed, body["chat"]["id"]) == [body["user"], body["assistant"]]
 
 
 def test_empty_and_too_long_messages_are_rejected(authed, llm):
     for text in ["", "   \n\t ", "я" * 501]:
-        response = authed.post("/api/messages", json={"text": text})
-        assert response.status_code == 422, repr(text[:10])
-    assert authed.post("/api/messages", json={"text": "я" * 500}).status_code == 201
+        assert ask(authed, text).status_code == 422, repr(text[:10])
+    assert ask(authed, "я" * 500).status_code == 201
     assert len(llm.calls) == 1
 
 
-def test_llm_failure_is_reported_and_leaves_history_untouched(authed, llm):
+def test_llm_failure_is_reported_and_no_chat_appears(authed, llm):
     llm.error = LLMError(LLMFailure.RATE_LIMITED, "429 quota")
 
-    response = authed.post("/api/messages", json={"text": "2+2?"})
+    response = ask(authed, "2+2?")
 
     assert response.status_code == 503
     error = response.json()["error"]
     assert error["code"] == "llm_rate_limited"
     assert "quota" not in error["message"]  # внутренние подробности наружу не уходят
-    assert authed.get("/api/messages").json()["messages"] == []
+    assert chats(authed) == []
 
 
 def test_answer_cut_off_midway_ends_with_error_event_and_is_not_stored(authed, llm):
+    chat_id = done(ask(authed, "первый вопрос"))["chat"]["id"]
     llm.error_midway = LLMError(LLMFailure.UNAVAILABLE, "connection reset")
 
-    response = authed.post("/api/messages", json={"text": "2+2?"})
+    response = ask(authed, "2+2?", chat_id)
 
     assert response.status_code == 201  # заголовки ушли до сбоя — об ошибке сообщает событие
     events = sse_events(response)
     # одна повторная попытка (reset), затем честная ошибка
     assert [name for name, _ in events] == ["delta", "reset", "delta", "error"]
-    assert len(llm.calls) == 2
     assert events[-1][1]["code"] == "llm_unavailable"
     assert "reset" not in events[-1][1]["message"]
-    assert authed.get("/api/messages").json()["messages"] == []
+    assert len(history(authed, chat_id)) == 2
 
 
 def test_answer_cut_off_once_is_restarted_and_stored(authed, llm):
     llm.error_midway = LLMError(LLMFailure.UNAVAILABLE, "stream closed")
     llm.error_midway_times = 1
 
-    events = sse_events(authed.post("/api/messages", json={"text": "2+2?"}))
+    events = sse_events(ask(authed, "2+2?"))
 
     assert [name for name, _ in events] == ["delta", "reset", "delta", "delta", "done"]
-    history = authed.get("/api/messages").json()["messages"]
-    assert [m["role"] for m in history] == ["user", "assistant"]
-    assert history[1]["text"] == "Ответ на «2+2?»: $x = 1$"  # без обрывка первой попытки
+    messages = history(authed, events[-1][1]["chat"]["id"])
+    assert [m["role"] for m in messages] == ["user", "assistant"]
+    assert messages[1]["text"] == "Ответ на «2+2?»: $x = 1$"  # без обрывка первой попытки
 
 
-def test_history_survives_restart(authed, settings, llm):
-    authed.post("/api/messages", json={"text": "Что такое предел?"})
+# --- Несколько чатов ---
+
+
+def test_chats_are_separate_and_listed_by_recent_activity(authed, llm):
+    first = done(ask(authed, "про дроби"))["chat"]
+    second = done(ask(authed, "про проценты"))["chat"]
+    assert [c["id"] for c in chats(authed)] == [second["id"], first["id"]]
+
+    done(ask(authed, "ещё про дроби", first["id"]))
+
+    assert [c["id"] for c in chats(authed)] == [first["id"], second["id"]]  # активный чат поднялся
+    assert [m["text"] for m in history(authed, first["id"]) if m["role"] == "user"] == ["про дроби", "ещё про дроби"]
+    assert [m["text"] for m in history(authed, second["id"]) if m["role"] == "user"] == ["про проценты"]
+    assert chats(authed)[0]["title"] == "про дроби"  # название — первый вопрос, дальше не меняется
+
+
+def test_model_context_is_limited_and_comes_only_from_the_same_chat(authed, llm):
+    other = done(ask(authed, "чужой вопрос"))["chat"]["id"]
+    chat_id = done(ask(authed, "вопрос 0"))["chat"]["id"]
+    for number in range(1, 4):
+        ask(authed, f"вопрос {number}", chat_id)
+
+    turns = llm.calls[-1]
+    # context_exchanges=2 → две предыдущие пары этого чата и текущий вопрос
+    assert [t.text for t in turns if t.role == "user"] == ["вопрос 1", "вопрос 2", "вопрос 3"]
+    assert [t.role for t in turns] == ["user", "assistant", "user", "assistant", "user"]
+    assert other != chat_id
+
+
+def test_long_first_question_becomes_a_short_title(authed):
+    chat = done(ask(authed, "Очень   длинный вопрос\nв две строки " + "и ещё слова " * 10))["chat"]
+    assert len(chat["title"]) <= 60 and chat["title"].endswith("…")
+    assert chat["title"].startswith("Очень длинный вопрос в две строки")
+
+
+def test_delete_chat_removes_it_with_messages(authed, llm):
+    keep = done(ask(authed, "оставить"))["chat"]["id"]
+    drop = done(ask(authed, "удалить"))["chat"]["id"]
+
+    assert authed.delete(f"/api/chats/{drop}").status_code == 204
+
+    assert [c["id"] for c in chats(authed)] == [keep]
+    assert authed.get(f"/api/chats/{drop}/messages").status_code == 404
+    assert len(history(authed, keep)) == 2
+
+
+def test_unknown_chat_is_404_and_model_is_not_called(authed, llm):
+    for response in (authed.get("/api/chats/999/messages"), ask(authed, "2+2", chat_id=999)):
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "chat_not_found"
+    assert llm.calls == []
+
+
+def test_chats_survive_restart(authed, settings, llm):
+    chat = done(ask(authed, "Что такое предел?"))["chat"]
 
     restarted = TestClient(create_app(settings, llm))
     restarted.cookies.set("epsilon_session", authed.cookies.get("epsilon_session"))
-    history = restarted.get("/api/messages").json()["messages"]
-    assert [m["text"] for m in history][0] == "Что такое предел?"
+    assert chats(restarted) == [chat]
+    assert history(restarted, chat["id"])[0]["text"] == "Что такое предел?"
 
 
-def test_model_receives_limited_context(authed, llm):
-    for number in range(4):
-        authed.post("/api/messages", json={"text": f"вопрос {number}"})
-
-    turns = llm.calls[-1]
-    # context_exchanges=2 → две предыдущие пары и текущий вопрос
-    assert [t.text for t in turns if t.role == "user"] == ["вопрос 1", "вопрос 2", "вопрос 3"]
-    assert [t.role for t in turns] == ["user", "assistant", "user", "assistant", "user"]
+# --- Заготовки ---
 
 
 def test_preset_mode_is_stored_and_shapes_the_request_to_the_model(authed, llm):
-    events = sse_events(authed.post("/api/messages", json={"text": "дискриминант", "mode": "learn"}))
-    authed.post("/api/messages", json={"text": "а попроще?"})
+    body = done(ask(authed, "дискриминант", mode="learn"))
+    ask(authed, "а попроще?", body["chat"]["id"])
 
-    assert events[-1][1]["user"] == events[-1][1]["user"] | {"text": "дискриминант", "mode": "learn"}
-    history = authed.get("/api/messages").json()["messages"]
-    assert [m["mode"] for m in history] == ["learn", None, None, None]
+    assert (body["user"]["text"], body["user"]["mode"]) == ("дискриминант", "learn")
+    assert [m["mode"] for m in history(authed, body["chat"]["id"])] == ["learn", None, None, None]
     # модель получает название режима — и для нового вопроса, и для вопросов из контекста
     assert llm.calls[0][-1].text == "Режим «Изучение с нуля». Тема: дискриминант"
     assert [t.text for t in llm.calls[1] if t.role == "user"] == [
@@ -108,17 +166,14 @@ def test_preset_mode_is_stored_and_shapes_the_request_to_the_model(authed, llm):
 
 
 def test_unknown_mode_is_rejected(authed, llm):
-    assert authed.post("/api/messages", json={"text": "2+2", "mode": "hack"}).status_code == 422
+    assert authed.post("/api/chats", json={"text": "2+2", "mode": "hack"}).status_code == 422
     assert llm.calls == []
 
 
-def test_database_created_before_presets_is_upgraded(settings, llm):
-    import sqlite3
+# --- Обновление базы и прочее ---
 
-    from fastapi.testclient import TestClient as Client
 
-    from tests.conftest import ACCESS_KEY
-
+def test_database_from_single_chat_version_becomes_a_saved_chat(settings, llm):
     old = sqlite3.connect(settings.database_path)
     old.executescript(
         "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, "
@@ -129,23 +184,22 @@ def test_database_created_before_presets_is_upgraded(settings, llm):
     old.commit()
     old.close()
 
-    client = Client(create_app(settings, llm))
+    client = TestClient(create_app(settings, llm))
     client.post("/api/auth/login", json={"access_key": ACCESS_KEY})
-    history = client.get("/api/messages").json()["messages"]
-    assert [(m["text"], m["mode"]) for m in history] == [("старый вопрос", None), ("старый ответ", None)]
-    assert client.post("/api/messages", json={"text": "новый", "mode": "solve"}).status_code == 201
 
-
-def test_clear_history(authed):
-    authed.post("/api/messages", json={"text": "2+2?"})
-    assert authed.delete("/api/messages").status_code == 204
-    assert authed.get("/api/messages").json()["messages"] == []
+    [chat] = chats(client)
+    assert chat["title"] == "старый вопрос"
+    assert [(m["text"], m["mode"]) for m in history(client, chat["id"])] == [("старый вопрос", None), ("старый ответ", None)]
+    assert ask(client, "новый", chat["id"], mode="solve").status_code == 201
+    # повторный запуск ничего не дублирует
+    again = TestClient(create_app(settings, llm))
+    again.cookies.set("epsilon_session", client.cookies.get("epsilon_session"))
+    assert [c["id"] for c in chats(again)] == [chat["id"]]
 
 
 def test_index_and_security_headers(client, authed):
-    for response in (client.get("/"), authed.post("/api/messages", json={"text": "2+2?"})):
+    for response in (client.get("/"), ask(authed, "2+2?")):
         assert response.status_code in (200, 201)
         assert "default-src 'self'" in response.headers["content-security-policy"]
     response = client.get("/")
-    assert "default-src 'self'" in response.headers["content-security-policy"]
     assert response.headers["x-content-type-options"] == "nosniff"

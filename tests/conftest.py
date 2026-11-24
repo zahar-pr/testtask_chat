@@ -42,6 +42,19 @@ def sse_events(response) -> list[tuple[str, dict]]:
     return events
 
 
+def ask(client, text: str, chat_id: int | None = None, mode: str | None = None):
+    """Задать вопрос: в чате chat_id или, если он не указан, в новом чате."""
+    path = "/api/chats" if chat_id is None else f"/api/chats/{chat_id}/messages"
+    return client.post(path, json={"text": text} if mode is None else {"text": text, "mode": mode})
+
+
+def done(response) -> dict:
+    """Данные события done: сохранённые чат, вопрос и ответ."""
+    name, data = sse_events(response)[-1]
+    assert name == "done", (name, data)
+    return data
+
+
 @pytest.fixture
 def settings(tmp_path) -> Settings:
     return Settings(

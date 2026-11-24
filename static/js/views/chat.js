@@ -1,4 +1,5 @@
-// Экран чата: история, отправка сообщения, «печать» ответа по мере генерации, ошибки, очистка, выход.
+// Экран чата: открытый чат и его история, отправка сообщения, «печать» ответа по мере генерации,
+// ошибки, заготовки, очистка, выход. Список сохранённых чатов — в sidebar.js.
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
 import { MODES, modeById } from '../modes.js';
@@ -6,6 +7,7 @@ import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
 import { stablePart } from '../render/streaming.js';
 import { MESSAGE, checkMessage } from '../validation.js';
+import { createSidebar } from './sidebar.js';
 
 const SLOW_ANSWER_MS = 10_000;
 
@@ -42,8 +44,18 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   const defaultPlaceholder = input.placeholder;
 
-  let loaded = false; // история получена с сервера
+  let chatId = null; // открытый чат; null — новый, он сохранится вместе с первым ответом
+  let opening = 0; // номер последнего открытия чата: ответ на устаревший запрос истории игнорируем
+  let loaded = false; // история открытого чата получена с сервера
   let waiting = false; // ждём ответа модели
+
+  const sidebar = createSidebar({
+    onSelect: (id) => open(id),
+    onNew() {
+      open(null);
+      input.focus();
+    },
+  });
   let mode = null; // выбранная заготовка (из MODES); действует на одно сообщение
 
   // --- Состояние элементов управления ---
@@ -59,7 +71,8 @@ export function createChatView({ onSessionLost, onLogout }) {
 
     const hasMessages = list.childElementCount > 0;
     welcome.hidden = !loaded || hasMessages;
-    clearButton.disabled = waiting || list.querySelector('.message[data-id]') === null;
+    clearButton.disabled = waiting || chatId === null;
+    sidebar.setDisabled(waiting);
     for (const button of welcome.querySelectorAll('button')) button.disabled = waiting;
   }
 
@@ -69,8 +82,9 @@ export function createChatView({ onSessionLost, onLogout }) {
   }
 
   function setStatus(...content) {
-    status.replaceChildren(...content);
-    status.hidden = content.length === 0;
+    const shown = content.filter((part) => part !== undefined);
+    status.replaceChildren(...shown);
+    status.hidden = shown.length === 0;
   }
 
   const scrollToEnd = () => scroller.scrollTo({ top: scroller.scrollHeight });
@@ -199,21 +213,67 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   // --- Сценарии ---
 
-  async function load() {
+  const statusWithRetry = (message, action) => {
+    const retry = el('button', { type: 'button', class: 'button button--secondary button--small' }, 'Повторить');
+    retry.addEventListener('click', action);
+    setStatus(message, el('div', {}, retry));
+  };
+
+  // Адрес страницы помнит открытый чат (#12, #new): он переживает перезагрузку и работает кнопка «Назад».
+  function chatFromAddress() {
+    const value = location.hash.slice(1);
+    if (value === 'new') return null;
+    return /^\d+$/.test(value) ? Number(value) : undefined; // undefined — в адресе чат не указан
+  }
+
+  function rememberInAddress(id) {
+    const hash = id === null ? '#new' : `#${id}`;
+    if (location.hash !== hash) location.hash = hash;
+  }
+
+  /** Загрузить список чатов и открыть нужный: из адреса страницы или последний по времени. */
+  async function start() {
     loaded = false;
     list.replaceChildren();
-    setStatus('Загружаем историю…');
+    setStatus('Загружаем чаты…');
     refresh();
     try {
-      const messages = await api.listMessages();
+      sidebar.setChats(await api.listChats());
+    } catch (error) {
+      if (!sessionLost(error)) statusWithRetry(`Не удалось загрузить чаты. ${error.message}`, start);
+      return;
+    }
+    const wanted = chatFromAddress();
+    await open(wanted !== undefined && (wanted === null || sidebar.has(wanted)) ? wanted : sidebar.latest());
+  }
+
+  /** Открыть сохранённый чат или (id = null) пустой новый. */
+  async function open(id) {
+    const attempt = ++opening;
+    chatId = id;
+    loaded = id === null;
+    sidebar.setActive(id);
+    rememberInAddress(id);
+    setMode(null);
+    list.replaceChildren();
+    setStatus(id === null ? undefined : 'Загружаем историю…');
+    refresh();
+    if (id === null) return;
+
+    try {
+      const messages = await api.listMessages(id);
+      if (attempt !== opening) return; // пока грузилось, открыли другой чат
       list.append(...messages.map((message) => storedMessage(message)));
       loaded = true;
       setStatus();
     } catch (error) {
-      if (sessionLost(error)) return;
-      const retry = el('button', { type: 'button', class: 'button button--secondary button--small' }, 'Повторить');
-      retry.addEventListener('click', load);
-      setStatus(`Не удалось загрузить историю. ${error.message}`, el('div', {}, retry));
+      if (attempt !== opening || sessionLost(error)) return;
+      if (error.status === 404) { // чат удалили в другой вкладке
+        sidebar.remove(id);
+        open(null);
+        return;
+      }
+      statusWithRetry(`Не удалось загрузить историю. ${error.message}`, () => open(id));
     }
     refresh();
     scrollToEnd();
@@ -239,6 +299,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     let answer = null;
     try {
       const exchange = await api.sendMessage(rawText, {
+        chatId,
         mode: usedMode?.id ?? null,
         onDelta(delta) {
           if (answer === null) {
@@ -254,6 +315,11 @@ export function createChatView({ onSessionLost, onLogout }) {
 
       // Ответ готов и сохранён: заменяем черновики записями из истории (с датой и временем).
       const follow = isNearEnd();
+      // Новый чат сохранился вместе с первым ответом — теперь у него есть номер и место в списке.
+      chatId = exchange.chat.id;
+      sidebar.upsert(exchange.chat);
+      sidebar.setActive(chatId);
+      rememberInAddress(chatId);
       draft.replaceWith(storedMessage(exchange.user));
       (answer?.node ?? typing).replaceWith(storedMessage(exchange.assistant, answer?.widgets));
       if (follow) scrollToEnd();
@@ -271,14 +337,17 @@ export function createChatView({ onSessionLost, onLogout }) {
     }
   }
 
-  async function clearHistory() {
+  /** «Очистить»: удалить открытый чат со всеми сообщениями и начать новый. */
+  async function clearChat() {
+    const id = chatId;
+    if (id === null) return;
     try {
-      await api.clearMessages();
-      list.replaceChildren();
-      refresh();
+      await api.deleteChat(id);
+      sidebar.remove(id);
+      await open(null);
       input.focus();
     } catch (error) {
-      if (!sessionLost(error)) alert(`Не удалось очистить историю. ${error.message}`);
+      if (!sessionLost(error)) alert(`Не удалось очистить чат. ${error.message}`);
     }
   }
 
@@ -379,7 +448,7 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   clearButton.addEventListener('click', () => clearDialog.showModal());
   clearDialog.addEventListener('close', () => {
-    if (clearDialog.returnValue === 'confirm') clearHistory();
+    if (clearDialog.returnValue === 'confirm') clearChat();
     clearDialog.returnValue = '';
   });
 
@@ -388,14 +457,27 @@ export function createChatView({ onSessionLost, onLogout }) {
     onLogout();
   });
 
+  // Адрес изменили вручную или кнопкой «Назад» — открываем указанный в нём чат.
+  window.addEventListener('hashchange', () => {
+    const wanted = chatFromAddress();
+    if (view.hidden || wanted === undefined || wanted === chatId) return;
+    if (waiting) rememberInAddress(chatId); // пока идёт ответ, остаёмся в текущем чате
+    else open(wanted);
+  });
+
   return {
     show() {
       view.hidden = false;
       input.focus();
-      load();
+      start();
     },
     hide() {
       view.hidden = true;
+      opening += 1;
+      chatId = null;
+      loaded = false;
+      sidebar.close();
+      sidebar.setChats([]);
       setMode(null);
       list.replaceChildren();
       setStatus();

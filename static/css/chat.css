@@ -1,18 +1,38 @@
-/* Экран чата: шапка, лента сообщений, поле ввода. */
-.chat {
-  height: 100vh; height: 100dvh;
-  display: flex; flex-direction: column;
-}
+/* Экран чата: список чатов слева, справа — шапка, лента сообщений и поле ввода. */
+.chat { height: 100vh; height: 100dvh; display: flex; }
+.chat__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
-/* --- Шапка --- */
-.chat__header { flex: none; border-bottom: 1px solid var(--line); background: var(--bg); }
-.chat__header-inner {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  max-width: calc(var(--column) + 32px); margin: 0 auto; padding: 10px 16px;
+/* --- Список сохранённых чатов --- */
+.sidebar {
+  flex: none; width: 272px; padding: 12px;
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--line); background: var(--bg);
+  overflow-y: auto; overscroll-behavior: contain;
 }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.brand__name { font-size: 17px; font-weight: 650; line-height: 1.25; }
-.brand__tagline { font-size: 12px; line-height: 1.35; color: var(--ink-faint); }
+.sidebar__new { width: 100%; justify-content: flex-start; padding: 0 12px; background: var(--surface); }
+.sidebar__heading { margin: 22px 10px 8px; font: 600 12px/1.3 var(--font-text); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-faint); }
+.sidebar__list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.sidebar__chat {
+  width: 100%; padding: 8px 10px; display: flex; flex-direction: column; gap: 1px;
+  border: 0; border-radius: var(--radius-s); background: none; cursor: pointer; text-align: left;
+  transition: background-color .15s;
+}
+.sidebar__chat:not(:disabled):hover { background: var(--surface-sunken); }
+.sidebar__chat.is-active { background: var(--accent-soft); color: var(--accent-soft-ink); }
+.sidebar__chat:disabled { cursor: default; opacity: .5; }
+.sidebar__chat-title { font-size: 13.5px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar__chat-date { font-size: 11.5px; color: var(--ink-faint); }
+.sidebar__chat.is-active .sidebar__chat-date { color: inherit; opacity: .7; }
+.sidebar__empty { margin: 4px 10px; font-size: 12.5px; line-height: 1.5; color: var(--ink-faint); }
+.sidebar-backdrop { display: none; }
+
+/* --- Шапка: только действия --- */
+.chat__header { flex: none; }
+.chat__header-inner {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  padding: 8px 16px;
+}
+.chat__menu { display: none; padding: 0 8px; }
 .chat__actions { display: flex; gap: 2px; }
 
 /* --- Лента --- */
@@ -183,6 +203,20 @@
 .send:not(:disabled):active { transform: scale(.94); }
 .send:disabled { cursor: not-allowed; background: var(--surface-sunken); color: var(--ink-faint); }
 .send.is-busy:disabled { background: var(--accent-soft); color: var(--accent); }
+
+/* Узкий экран: список чатов — выезжающая панель, открывается кнопкой в шапке. */
+@media (max-width: 899px) {
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; z-index: 20; width: min(300px, 84vw);
+    box-shadow: var(--shadow-card);
+    transform: translateX(-102%); visibility: hidden;
+    transition: transform .2s ease-out, visibility 0s .2s;
+  }
+  .chat.is-sidebar-open .sidebar { transform: none; visibility: visible; transition: transform .2s ease-out; }
+  .sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 19; background: rgba(20, 20, 18, 0.45); }
+  .chat__menu { display: inline-flex; }
+  .chat__header-inner { justify-content: space-between; }
+}
 
 @media (max-width: 600px) {
   .chat__actions .button__label { display: none; }

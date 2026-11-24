@@ -34,6 +34,18 @@ class MessageResponse(BaseModel):
     mode: str | None = None
 
 
+class ChatResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    updated_at: datetime
+
+
+class ChatListResponse(BaseModel):
+    chats: list[ChatResponse]
+
+
 class HistoryResponse(BaseModel):
     messages: list[MessageResponse]
 
@@ -41,5 +53,6 @@ class HistoryResponse(BaseModel):
 class ExchangeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    chat: ChatResponse
     user: MessageResponse
     assistant: MessageResponse

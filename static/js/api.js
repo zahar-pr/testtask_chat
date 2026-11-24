@@ -75,16 +75,19 @@ export const login = (accessKey) => request('POST', '/api/auth/login', { access_
 export const logout = () => request('POST', '/api/auth/logout');
 export const isAuthenticated = async () => (await request('GET', '/api/auth/session')).authenticated;
 
-export const listMessages = async () => (await request('GET', '/api/messages')).messages;
-export const clearMessages = () => request('DELETE', '/api/messages');
+export const listChats = async () => (await request('GET', '/api/chats')).chats;
+export const listMessages = async (chatId) => (await request('GET', `/api/chats/${chatId}/messages`)).messages;
+export const deleteChat = (chatId) => request('DELETE', `/api/chats/${chatId}`);
 
 /**
- * Отправить вопрос (mode — идентификатор заготовки или null). Ответ модели приходит потоком: каждая новая часть передаётся в onDelta,
- * а результат функции — сохранённая пара { user, assistant }. onReset вызывается, если ответ
- * оборвался и сервер запросил его заново: показанное до этого нужно стереть.
+ * Отправить вопрос в чат chatId (null — начать новый чат; mode — заготовка или null).
+ * Ответ модели приходит потоком: каждая новая часть передаётся в onDelta, а результат
+ * функции — сохранённые { chat, user, assistant }. onReset вызывается, если ответ оборвался
+ * и сервер запросил его заново: показанное до этого нужно стереть.
  */
-export async function sendMessage(text, { mode = null, onDelta, onReset } = {}) {
-  const response = await call('POST', '/api/messages', { text, mode });
+export async function sendMessage(text, { chatId = null, mode = null, onDelta, onReset } = {}) {
+  const path = chatId === null ? '/api/chats' : `/api/chats/${chatId}/messages`;
+  const response = await call('POST', path, { text, mode });
   try {
     for await (const { event, data } of readEvents(response)) {
       if (event === 'delta') onDelta?.(data.text);

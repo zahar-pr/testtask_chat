@@ -40,6 +40,12 @@ class InvalidAccessKey(AppError):
     message = "Неверный ключ доступа."
 
 
+class ChatNotFound(AppError):
+    status_code = 404
+    code = "chat_not_found"
+    message = "Чат не найден. Возможно, он был удалён."
+
+
 class TooManyLoginAttempts(AppError):
     status_code = 429
     code = "too_many_attempts"
