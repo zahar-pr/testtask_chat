@@ -4,7 +4,7 @@
 //
 // Что сейчас в ленте, хранится в переменных (stored, unanswered, exchanging), а не выводится
 // из разметки: по ним решается, какая пара последняя, пуст ли чат и можно ли показать действия.
-import { $, el } from '../dom.js';
+import { $, button, el } from '../dom.js';
 import { DEFAULT_FOLLOWUPS, modeById } from '../modes.js';
 import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
@@ -19,12 +19,6 @@ const TYPING_FRAME_MS = 32;
 const TYPING_CATCH_UP = 12; // за кадр — 1/12 накопившегося текста
 const TYPING_MIN_STEP = 2; // но не меньше двух символов
 const FOLLOW_DISTANCE_PX = 80; // лента следует за текстом, пока пользователь у её конца
-
-const button = (label, kind, onClick) => {
-  const node = el('button', { type: 'button', class: `button button--small button--${kind}` }, label);
-  node.addEventListener('click', onClick);
-  return node;
-};
 
 /**
  * recordAttempt(messageId, result) — тренажёр в ответе сообщил результат задания;

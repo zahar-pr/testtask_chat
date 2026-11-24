@@ -2,7 +2,7 @@
 //
 // Как и график, тренажёр собирается из данных, а не из присланной разметки: модель описывает
 // задания, а внешний вид и поведение одинаковы для всех тренажёров в чате.
-import { el } from '../dom.js';
+import { button, el } from '../dom.js';
 import { compile } from '../math/expr.js';
 import { formatNumber } from '../math/format.js';
 import { createPlot } from './plot/index.js';
@@ -107,12 +107,6 @@ export function createTrainer(spec, context) {
     const feedback = el('div', { class: 'trainer__feedback', role: 'status' });
     const extra = el('div', { class: 'trainer__extra' });
     const actions = el('div', { class: 'trainer__actions' });
-
-    const button = (label, kind, onClick) => {
-      const node = el('button', { type: 'button', class: `button button--small button--${kind}` }, label);
-      node.addEventListener('click', onClick);
-      return node;
-    };
 
     function say(kind, message) {
       const icon = kind === 'good' ? '✓' : '✕';

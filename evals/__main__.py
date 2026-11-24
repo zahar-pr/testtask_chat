@@ -25,7 +25,7 @@ from app.chat.prompt import SYSTEM_PROMPT
 from app.config import get_settings
 from app.llm.base import ChatTurn, LLMError
 from app.llm.gemini import GeminiClient
-from evals.answer import parse_answer
+from evals.answer import node_command, parse_answer
 from evals.cases import CASES, Case
 from evals.checks import Result
 
@@ -70,6 +70,7 @@ def render_report(outcomes: list[Outcome], models: list[str]) -> str:
     answered = [outcome for outcome in outcomes if not outcome.error]
     checks = [result for outcome in answered for result in outcome.results]
     prompt_version = hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest()[:8]
+    by_primary = sum(outcome.model == models[0] for outcome in answered)
     lines = [
         "# Автопроверка качества ответов",
         "",
@@ -79,6 +80,9 @@ def render_report(outcomes: list[Outcome], models: list[str]) -> str:
         f"**Вопросов пройдено: {sum(o.passed for o in outcomes)} из {len(outcomes)}** · "
         f"проверок пройдено: {sum(r.passed for r in checks)} из {len(checks)}"
         + (f" · без ответа модели: {len(outcomes) - len(answered)}" if len(answered) < len(outcomes) else ""),
+        "",
+        f"Основная модель (`{models[0]}`) ответила на {by_primary} из {len(answered)} вопросов"
+        + ("." if by_primary == len(answered) else " — на остальные отвечали запасные; оценка относится и к ним."),
         "",
         "| Вопрос | Заготовка | Итог | Что не прошло | Время | Модель |",
         "|---|---|---|---|---|---|",
@@ -109,6 +113,9 @@ def main() -> int:
     # Сообщения клиента о переходе на запасную модель здесь только шум: итог виден в отчёте.
     logging.getLogger("app.llm.gemini").setLevel(logging.ERROR)
     settings = get_settings()
+    if node_command() is None:
+        print("Для автопроверки нужен Node.js 20+: блоки графиков и тренажёров проверяет код интерфейса.")
+        return 2
     answered_by: list[str] = []
     client = GeminiClient(
         settings.gemini_api_key.get_secret_value(),
@@ -138,6 +145,9 @@ def main() -> int:
         REPORT.write_text(report, encoding="utf-8")
         print(f"\nОтчёт: {REPORT}")
     print(f"\nПройдено вопросов: {sum(o.passed for o in outcomes)} из {len(outcomes)}")
+    by_primary = sum(outcome.model == settings.gemini_models[0] for outcome in outcomes)
+    if by_primary < len(outcomes):
+        print(f"ВНИМАНИЕ: основная модель ответила только на {by_primary} из {len(outcomes)} — проверьте квоту.")
     return 0 if all(outcome.passed for outcome in outcomes) else 1
 
 

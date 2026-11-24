@@ -12,3 +12,10 @@ export function el(tag, attributes = {}, ...children) {
   node.append(...children);
   return node;
 }
+
+/** Небольшая кнопка действия: kind — оформление (primary, secondary, ghost, danger). */
+export function button(label, kind, onClick) {
+  const node = el('button', { type: 'button', class: `button button--small button--${kind}` }, label);
+  node.addEventListener('click', onClick);
+  return node;
+}
