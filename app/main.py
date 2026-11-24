@@ -50,7 +50,9 @@ def create_app(settings: Settings | None = None, llm: LLMClient | None = None) -
         if gemini is not None:
             gemini.close()
 
-    app = FastAPI(title="Эпсилон", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+    app = FastAPI(
+        title="Чат-помощник по математике", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
+    )
 
     app.state.auth_service = AuthService(
         access_key=settings.access_key.get_secret_value(),

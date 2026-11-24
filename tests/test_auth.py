@@ -82,17 +82,17 @@ def test_requests_from_another_site_are_rejected(client):
 
 
 def test_logout_revokes_session(authed):
-    token = authed.cookies.get("epsilon_session")
+    token = authed.cookies.get("session")
     assert authed.post("/api/auth/logout").status_code == 204
 
-    authed.cookies.set("epsilon_session", token)  # украденный токен после выхода бесполезен
+    authed.cookies.set("session", token)  # украденный токен после выхода бесполезен
     assert authed.get("/api/auth/session").json() == {"authenticated": False}
     assert authed.get("/api/chats").status_code == 401
 
 
 def test_session_survives_restart(authed, settings, llm):
     restarted = TestClient(create_app(settings, llm))
-    restarted.cookies.set("epsilon_session", authed.cookies.get("epsilon_session"))
+    restarted.cookies.set("session", authed.cookies.get("session"))
     assert restarted.get("/api/auth/session").json() == {"authenticated": True}
 
 

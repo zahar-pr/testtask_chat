@@ -145,7 +145,7 @@ def test_chats_survive_restart(authed, settings, llm):
     chat = done(ask(authed, "Что такое предел?"))["chat"]
 
     restarted = TestClient(create_app(settings, llm))
-    restarted.cookies.set("epsilon_session", authed.cookies.get("epsilon_session"))
+    restarted.cookies.set("session", authed.cookies.get("session"))
     assert chats(restarted) == [chat]
     assert history(restarted, chat["id"])[0]["text"] == "Что такое предел?"
 
@@ -230,7 +230,7 @@ def test_database_from_single_chat_version_becomes_a_saved_chat(settings, llm):
     assert ask(client, "новый", chat["id"], mode="solve").status_code == 201
     # повторный запуск ничего не дублирует
     again = TestClient(create_app(settings, llm))
-    again.cookies.set("epsilon_session", client.cookies.get("epsilon_session"))
+    again.cookies.set("session", client.cookies.get("session"))
     assert [c["id"] for c in chats(again)] == [chat["id"]]
 
 

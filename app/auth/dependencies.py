@@ -10,7 +10,7 @@ from app.auth.rate_limit import LoginRateLimiter
 from app.auth.service import AuthService
 from app.errors import NotAuthenticated
 
-SESSION_COOKIE = "epsilon_session"
+SESSION_COOKIE = "session"
 
 SessionToken = Annotated[str | None, Cookie(alias=SESSION_COOKIE)]
 

@@ -35,7 +35,7 @@ def test_access_key_is_not_kept_in_the_browser(chat):
     assert chat.evaluate("document.cookie") == ""  # cookie сессии недоступна скриптам (HttpOnly)
     stored = chat.evaluate("JSON.stringify([Object.entries(localStorage), Object.entries(sessionStorage)])")
     assert ACCESS_KEY not in stored
-    cookie = next(c for c in chat.context.cookies() if c["name"] == "epsilon_session")
+    cookie = next(c for c in chat.context.cookies() if c["name"] == "session")
     assert cookie["httpOnly"] and cookie["sameSite"] == "Strict" and cookie["value"] != ACCESS_KEY
 
 

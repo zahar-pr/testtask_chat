@@ -16,7 +16,7 @@ const SYMBOLS = [
   { label: '≤', insert: ' ≤ ' }, { label: '≥', insert: ' ≥ ' }, { label: '≠', insert: ' ≠ ' },
   { label: '∞', insert: '∞', title: 'Бесконечность' },
 ];
-const SYMBOLS_SETTING = 'epsilon.symbols'; // помним только, открыта ли панель символов
+const SYMBOLS_SETTING = 'chat.symbols'; // помним только, открыта ли панель символов
 
 /**
  * onSubmit({ text, mode, replaceLast }) — пользователь отправил вопрос;
