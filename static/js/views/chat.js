@@ -33,9 +33,20 @@ export function createChatView({ onSessionLost, onLogout }) {
     onProgress: () => progress.open(),
   });
 
+  // Результаты тренажёров сохраняются в фоне. Помним незавершённые сохранения, чтобы
+  // «Мой прогресс» не показал старые цифры, если его открыли сразу после задания.
+  const saving = new Set();
+  function recordAttempt(messageId, result) {
+    // Прогресс — не главное: сбой записи результата чат не прерывает.
+    const request = api.saveAttempt({ message_id: messageId, ...result }).catch(() => {});
+    saving.add(request);
+    request.finally(() => saving.delete(request));
+  }
+
   // «Мой прогресс»: результаты тренажёров и тренировка по своим ошибкам в новом чате.
   const progress = createProgressPanel({
     onSessionLost,
+    untilSaved: () => Promise.all(saving),
     async onReview() {
       await open(null);
       send('Потренируй меня на моих ошибках', modeById('review'));
@@ -43,8 +54,7 @@ export function createChatView({ onSessionLost, onLogout }) {
   });
 
   const messages = createMessageList({
-    // Прогресс — не главное: сбой записи результата чат не прерывает.
-    recordAttempt: (messageId, result) => api.saveAttempt({ message_id: messageId, ...result }).catch(() => {}),
+    recordAttempt,
     onFollowup: (item) => send(item.text, modeById(item.mode)),
     onRegenerate: (question) => send(question.text, modeById(question.mode), { replaceLast: true }),
     onEdit: (question) => composer.startEditing(question.text, modeById(question.mode), true),

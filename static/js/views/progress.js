@@ -6,7 +6,11 @@ import { confirmAction } from './confirm.js';
 
 const OUTCOME_LABELS = { solved: 'не с первой попытки', revealed: 'с подсмотренным решением' };
 
-export function createProgressPanel({ onReview, onSessionLost }) {
+/**
+ * onReview() — нажали «Потренировать ошибки»; onSessionLost() — сессия закончилась;
+ * untilSaved() — Promise, который завершается, когда все результаты заданий дошли до сервера.
+ */
+export function createProgressPanel({ onReview, onSessionLost, untilSaved }) {
   const dialog = $('#progress-dialog');
   const content = $('#progress-content');
   const reviewButton = $('#progress-review');
@@ -62,6 +66,7 @@ export function createProgressPanel({ onReview, onSessionLost }) {
     reviewButton.disabled = true;
     resetButton.disabled = true;
     try {
+      await untilSaved();
       render(await api.getProgress());
     } catch (error) {
       if (error.status === 401) {
