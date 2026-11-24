@@ -41,6 +41,9 @@ test('параметры графика подставляются по имен
   assert.equal(value('a*(x - 1)^2 + b', { a: 2, b: 1, x: 3 }), 9);
   assert.equal(compileValue(7)({}), 7);
   assert.equal(compileValue('a / 2', ['a'])({ a: 5 }), 2.5);
+  assert.equal(compileValue(['a + 1'], ['a'])({ a: 5 }), 6); // координата, завёрнутая в список
+  assert.throws(() => compileValue([1, 2]), ExprError);
+  assert.throws(() => compileValue(null), ExprError);
 });
 
 test('ошибки находятся при разборе, а не при вычислении', () => {

@@ -9,6 +9,8 @@ ignore = ["B008"]  # Depends(...) в аргументах — обычная з�
 
 [tool.ruff.lint.per-file-ignores]
 "app/chat/prompt.py" = ["E501"]  # промпт — текст для модели, длинные строки в нём естественны
+"evals/cases.py" = ["E501"]  # таблица «вопрос — проверки»: строка на вопрос читается лучше переносов
+"tests/test_evals.py" = ["E501"]  # образцы ответов модели приведены как есть
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

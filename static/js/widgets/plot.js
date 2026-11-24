@@ -44,14 +44,17 @@ function list(value, max, name) {
 function normalize(spec) {
   if (!isObject(spec)) fail('описание рисунка должно быть объектом');
 
+  // Границы ползунка могут быть заданы выражением: "max": "2*pi".
+  const constant = (value) => (typeof value === 'string' ? compile(value)({}) : value);
   const params = list(spec.params, LIMITS.params, 'params').map((param) => {
-    const { name, min, max } = param;
+    const name = param.name;
+    const [min, max, start, stride] = [param.min, param.max, param.value, param.step].map(constant);
     if (typeof name !== 'string' || !PARAM_NAME.test(name) || name === 'x' || name === 't') {
       fail(`недопустимое имя параметра «${name}»`);
     }
     if (![min, max].every(Number.isFinite) || min >= max) fail(`у параметра ${name} нужны числа min < max`);
-    const step = Number.isFinite(param.step) && param.step > 0 ? param.step : (max - min) / 100;
-    const value = clamp(Number.isFinite(param.value) ? param.value : (min + max) / 2, min, max);
+    const step = Number.isFinite(stride) && stride > 0 ? stride : (max - min) / 100;
+    const value = clamp(Number.isFinite(start) ? start : (min + max) / 2, min, max);
     return { name, min, max, step, value, label: text(param.label) };
   });
   const names = params.map((param) => param.name);

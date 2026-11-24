@@ -33,6 +33,9 @@ class GeminiClient:
         # Таймаут — на ожидание очередной части ответа, а не на весь ответ целиком.
         self._http = http_client or httpx.Client(timeout=timeout_seconds)
         self._headers = {"x-goog-api-key": api_key}
+        # Какая модель из цепочки дала последний ответ. Только для диагностики и отчётов
+        # (см. evals/): при одновременных запросах значение относится к любому из них.
+        self.last_model: str | None = None
 
     def close(self) -> None:
         self._http.close()
@@ -51,6 +54,7 @@ class GeminiClient:
             try:
                 for chunk in self._stream_model(model, payload):
                     started = True
+                    self.last_model = model
                     yield chunk
                 return
             except LLMError as error:

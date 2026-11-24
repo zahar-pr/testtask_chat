@@ -202,6 +202,8 @@ export function compile(source, variables = []) {
 
 /** Значение поля, которое может быть числом или выражением в кавычках: 2, "2*pi", "a/2". */
 export function compileValue(value, variables = []) {
+  // Модель иногда заворачивает координату в список: "x": ["cos(a)"] — понимаем и так.
+  if (Array.isArray(value) && value.length === 1) return compileValue(value[0], variables);
   if (typeof value === 'number' && Number.isFinite(value)) return () => value;
   if (typeof value === 'string') return compile(value, variables);
   throw new ExprError('ожидалось число или выражение');
