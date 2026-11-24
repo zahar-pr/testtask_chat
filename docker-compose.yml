@@ -1,0 +1,14 @@
+# Запуск одной командой: docker compose up --build
+# Перед этим: cp .env.example .env и вписать ACCESS_KEY и GEMINI_API_KEY.
+services:
+  app:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - epsilon-data:/data
+    restart: unless-stopped
+
+volumes:
+  epsilon-data:

@@ -6,9 +6,9 @@ import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 
-from app.chat.repository import Chat, ChatRepository, Message, NewMessage
 from app.chat.modes import REVIEW, as_model_input, review_request
 from app.chat.prompt import SYSTEM_PROMPT
+from app.chat.repository import Chat, ChatRepository, Message, NewMessage
 from app.clock import utc_now
 from app.db import chat_title
 from app.errors import ChatNotFound, NothingToReplace, NothingToReview

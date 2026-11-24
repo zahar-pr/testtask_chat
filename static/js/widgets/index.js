@@ -47,7 +47,7 @@ export function jsonObjectEnd(text, from) {
  * "$\\frac{1}{2}$". Хуже того, «\f» и «\t» — допустимые в JSON символы, и «\frac» молча
  * превратился бы в мусор. Поэтому одиночную черту перед командой LaTeX удваиваем сами.
  */
-function parseSpec(source) {
+export function parseSpec(source) {
   const repaired = source.replace(/(\\+)(?=[A-Za-z]{2}|[{}()[\],;!|%&_ ])/g, (slashes) =>
     slashes.length % 2 === 1 ? `${slashes}\\` : slashes,
   );

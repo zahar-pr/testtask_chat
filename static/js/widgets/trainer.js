@@ -47,7 +47,7 @@ function normalize(spec) {
 }
 
 /** Разобрать ответ пользователя: «4», «x = 4», «1/2», «0,5», «2; 3», «2 и 3». */
-function parseAnswers(input) {
+export function parseAnswers(input) {
   const cleaned = input.trim().replace(/^[A-Za-zА-Яа-яё]\w*\s*[=≈]\s*/u, '');
   const parts = cleaned.split(/\s*;\s*|\s+и\s+|,\s+/u).filter((part) => part !== '');
   if (!parts.length) return null;
@@ -59,7 +59,8 @@ function parseAnswers(input) {
   }
 }
 
-function sameNumbers(given, expected, tolerance) {
+/** Совпадают ли ответы с ожидаемыми: порядок не важен, числа сравниваются с допуском. */
+export function sameNumbers(given, expected, tolerance) {
   if (given.length !== expected.length) return false;
   const close = (a, b) => Math.abs(a - b) <= (tolerance ?? DEFAULT_TOLERANCE * Math.max(1, Math.abs(b)));
   const rest = [...expected];

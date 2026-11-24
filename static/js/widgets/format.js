@@ -3,11 +3,12 @@
 /** Число для показа человеку: не больше `digits` знаков после запятой, без хвостовых нулей. */
 export function formatNumber(value, digits = 2) {
   if (!Number.isFinite(value)) return '—';
-  const magnitude = Math.abs(value);
-  if (magnitude !== 0 && (magnitude >= 1e6 || magnitude < 10 ** -digits / 2)) {
-    return value.toExponential(1).replace('.', ',').replace('-', '−').replace('e+', '·10^').replace('e−', '·10^−');
+  if (Math.abs(value) >= 1e6) {
+    // очень большие числа — в виде 1,2·10^6
+    const [mantissa, exponent] = value.toExponential(2).split('e');
+    return `${formatNumber(Number(mantissa), 2)}·10^${Number(exponent)}`;
   }
-  const rounded = Number(value.toFixed(digits));
+  const rounded = Number(value.toFixed(digits)); // погрешность вроде 1e-16 превращается в 0
   return String(Object.is(rounded, -0) ? 0 : rounded).replace('.', ',').replace('-', '−');
 }
 

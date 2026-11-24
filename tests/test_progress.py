@@ -3,7 +3,9 @@ from __future__ import annotations
 from tests.conftest import ask, done
 
 
-def attempt(client, task: int, outcome: str, *, message_id: int = 10, topic: str = "Проценты", question: str | None = None):
+def attempt(
+    client, task: int, outcome: str, *, message_id: int = 10, topic: str = "Проценты", question: str | None = None
+):
     return client.post("/api/progress/attempts", json={
         "message_id": message_id, "block": 0, "task": task, "topic": topic,
         "question": question or f"Задание {task}", "outcome": outcome,

@@ -212,8 +212,10 @@ def test_database_from_single_chat_version_becomes_a_saved_chat(settings, llm):
     old.executescript(
         "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, "
         "text TEXT NOT NULL, created_at TEXT NOT NULL);"
-        "INSERT INTO messages (role, text, created_at) VALUES ('user', 'старый вопрос', '2026-11-01T10:00:00.000+00:00');"
-        "INSERT INTO messages (role, text, created_at) VALUES ('assistant', 'старый ответ', '2026-11-01T10:00:05.000+00:00');"
+        "INSERT INTO messages (role, text, created_at) "
+        "VALUES ('user', 'старый вопрос', '2026-11-01T10:00:00.000+00:00');"
+        "INSERT INTO messages (role, text, created_at) "
+        "VALUES ('assistant', 'старый ответ', '2026-11-01T10:00:05.000+00:00');"
     )
     old.commit()
     old.close()
@@ -223,7 +225,8 @@ def test_database_from_single_chat_version_becomes_a_saved_chat(settings, llm):
 
     [chat] = chats(client)
     assert chat["title"] == "старый вопрос"
-    assert [(m["text"], m["mode"]) for m in history(client, chat["id"])] == [("старый вопрос", None), ("старый ответ", None)]
+    migrated = [(m["text"], m["mode"]) for m in history(client, chat["id"])]
+    assert migrated == [("старый вопрос", None), ("старый ответ", None)]
     assert ask(client, "новый", chat["id"], mode="solve").status_code == 201
     # повторный запуск ничего не дублирует
     again = TestClient(create_app(settings, llm))

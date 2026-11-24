@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# E, W — стиль; F — ошибки; I — порядок импортов; UP — современный синтаксис; B — частые ловушки
+select = ["E", "W", "F", "I", "UP", "B"]
+ignore = ["B008"]  # Depends(...) в аргументах — обычная запись для FastAPI
+
+[tool.ruff.lint.per-file-ignores]
+"app/chat/prompt.py" = ["E501"]  # промпт — текст для модели, длинные строки в нём естественны
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient` is deprecated"]

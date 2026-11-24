@@ -1,0 +1,9 @@
+{
+  "name": "epsilon",
+  "private": true,
+  "type": "module",
+  "description": "Node.js нужен только для тестов JS-кода интерфейса; само приложение работает без него.",
+  "scripts": {
+    "test": "node --test \"tests/js/*.test.js\""
+  }
+}
