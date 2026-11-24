@@ -5,11 +5,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.chat.modes import ModeId
 from app.config import MESSAGE_MAX_LENGTH
 
 
 class MessageRequest(BaseModel):
     text: str
+    mode: ModeId | None = None  # выбранная заготовка; без неё — обычный вопрос
 
     @field_validator("text")
     @classmethod
@@ -29,6 +31,7 @@ class MessageResponse(BaseModel):
     role: Literal["user", "assistant"]
     text: str
     created_at: datetime
+    mode: str | None = None
 
 
 class HistoryResponse(BaseModel):

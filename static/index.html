@@ -81,9 +81,18 @@
 
         <section id="chat-empty" class="welcome" hidden>
           <div class="logo logo--large" aria-hidden="true">ε</div>
-          <h2 class="welcome__title">Какую задачу разберём?</h2>
-          <p class="welcome__lead">Спросите о чём угодно из математики — от дробей до интегралов. Решу по шагам, нарисую график и дам потренироваться.</p>
-          <ul id="suggestions" class="welcome__suggestions" aria-label="Примеры вопросов"></ul>
+          <h2 class="welcome__title">С чего начнём?</h2>
+          <p class="welcome__lead">Выберите заготовку и напишите тему — или просто задайте любой вопрос по математике.</p>
+
+          <ul id="presets" class="presets" aria-label="Заготовки"></ul>
+
+          <div id="preset-details" class="preset-details" hidden>
+            <h3 id="preset-title" class="preset-details__title"></h3>
+            <p id="preset-description" class="preset-details__text"></p>
+            <p class="preset-details__hint">Напишите тему в поле ниже или выберите пример:</p>
+            <ul id="preset-examples" class="preset-details__examples" aria-label="Примеры"></ul>
+            <button type="button" id="preset-back" class="button button--ghost button--small">← Все заготовки</button>
+          </div>
         </section>
 
         <div id="messages" class="messages" role="log" aria-live="polite" aria-label="История переписки"></div>
@@ -96,6 +105,16 @@
         <textarea id="message-input" class="composer__input" rows="1"
                   placeholder="Спросите что-нибудь о математике…" aria-describedby="message-counter" enterkeyhint="send"></textarea>
         <div class="composer__bar">
+          <div class="mode">
+            <button type="button" id="mode-button" class="mode__button" aria-haspopup="menu" aria-expanded="false" aria-controls="mode-menu">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v7H4zM13 5h7v4h-7zM13 12h7v7h-7zM4 15h7v4H4z"/></svg>
+              <span id="mode-label">Заготовки</span>
+            </button>
+            <button type="button" id="mode-clear" class="mode__clear" aria-label="Убрать заготовку" title="Убрать заготовку" hidden>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+            </button>
+            <ul id="mode-menu" class="mode__menu" role="menu" aria-label="Заготовки" hidden></ul>
+          </div>
           <span class="composer__hint">Enter — отправить · Shift + Enter — новая строка</span>
           <span id="message-counter" class="composer__counter" aria-live="off">0 / 500</span>
           <button type="submit" id="send-button" class="send" aria-label="Отправить" disabled>

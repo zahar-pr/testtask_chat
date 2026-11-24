@@ -1,17 +1,11 @@
 // Экран чата: история, отправка сообщения, «печать» ответа по мере генерации, ошибки, очистка, выход.
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
+import { MODES, modeById } from '../modes.js';
 import { timeElement } from '../render/datetime.js';
 import { renderMarkdown } from '../render/markdown.js';
 import { stablePart } from '../render/streaming.js';
 import { MESSAGE, checkMessage } from '../validation.js';
-
-const SUGGESTIONS = [
-  { label: 'Уравнение', display: 'Решить $x^2 - 5x + 6 = 0$', text: 'Реши уравнение x^2 - 5x + 6 = 0' },
-  { label: 'График', display: 'Построить $y = \\sin x$ и $y = \\cos x$', text: 'Построй графики y = sin(x) и y = cos(x) и отметь точки пересечения' },
-  { label: 'Наглядно', display: 'Как $a$, $b$, $c$ меняют параболу?', text: 'Объясни наглядно, как коэффициенты a, b и c влияют на параболу' },
-  { label: 'Тренажёр', display: 'Потренироваться на процентах', text: 'Дай тренажёр из трёх заданий на проценты' },
-];
 
 const SLOW_ANSWER_MS = 10_000;
 
@@ -27,7 +21,16 @@ export function createChatView({ onSessionLost, onLogout }) {
   const scroller = $('#chat-scroll');
   const status = $('#chat-status');
   const welcome = $('#chat-empty');
-  const suggestions = $('#suggestions');
+  const presets = $('#presets');
+  const presetDetails = $('#preset-details');
+  const presetTitle = $('#preset-title');
+  const presetDescription = $('#preset-description');
+  const presetExamples = $('#preset-examples');
+  const presetBack = $('#preset-back');
+  const modeButton = $('#mode-button');
+  const modeLabel = $('#mode-label');
+  const modeClear = $('#mode-clear');
+  const modeMenu = $('#mode-menu');
   const list = $('#messages');
   const form = $('#composer');
   const input = $('#message-input');
@@ -37,8 +40,11 @@ export function createChatView({ onSessionLost, onLogout }) {
   const logoutButton = $('#logout-button');
   const clearDialog = $('#clear-dialog');
 
+  const defaultPlaceholder = input.placeholder;
+
   let loaded = false; // история получена с сервера
   let waiting = false; // ждём ответа модели
+  let mode = null; // выбранная заготовка (из MODES); действует на одно сообщение
 
   // --- Состояние элементов управления ---
 
@@ -54,7 +60,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     const hasMessages = list.childElementCount > 0;
     welcome.hidden = !loaded || hasMessages;
     clearButton.disabled = waiting || list.querySelector('.message[data-id]') === null;
-    for (const button of suggestions.querySelectorAll('button')) button.disabled = waiting;
+    for (const button of welcome.querySelectorAll('button')) button.disabled = waiting;
   }
 
   function autosize() {
@@ -79,9 +85,11 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   // --- Сообщения ---
 
-  function userMessage(text, meta) {
+  function userMessage(text, meta, modeId = null) {
+    const usedMode = modeById(modeId);
     return el('article', { class: 'message message--user' },
       el('div', { class: 'message__main' },
+        usedMode ? el('div', { class: 'message__mode' }, usedMode.title) : '',
         el('div', { class: 'message__text' }, text),
         el('div', { class: 'message__meta' }, meta),
       ),
@@ -98,7 +106,7 @@ export function createChatView({ onSessionLost, onLogout }) {
   /** widgets — уже нарисованные графики и тренажёры этого ответа (см. streamingAnswer). */
   function storedMessage(message, widgets = null) {
     const node = message.role === 'user'
-      ? userMessage(message.text, timeElement(message.created_at))
+      ? userMessage(message.text, timeElement(message.created_at), message.mode)
       : assistantMessage(el('div', { class: 'prose' }, renderMarkdown(message.text, { widgets })), timeElement(message.created_at));
     node.dataset.id = message.id;
     return node;
@@ -170,7 +178,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     };
   }
 
-  function markFailed(draft, text, reason) {
+  function markFailed(draft, text, usedMode, reason) {
     draft.classList.replace('is-sending', 'is-failed');
     $('.message__meta', draft).textContent = 'Не отправлено';
 
@@ -182,7 +190,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     });
     retry.addEventListener('click', () => {
       draft.remove();
-      send(text);
+      send(text, usedMode);
     });
     $('.message__main', draft).append(
       el('div', { class: 'message__error', role: 'alert' }, reason, el('div', { class: 'message__error-actions' }, dismiss, retry)),
@@ -211,12 +219,14 @@ export function createChatView({ onSessionLost, onLogout }) {
     scrollToEnd();
   }
 
-  async function send(rawText) {
+  /** usedMode — заготовка для этого сообщения; по умолчанию та, что выбрана сейчас. */
+  async function send(rawText, usedMode = mode) {
     const text = rawText.trim();
     if (waiting || !loaded || !checkMessage(rawText).valid) return;
 
+    setMode(null); // заготовка действует на одно сообщение
     for (const failed of list.querySelectorAll('.is-failed')) failed.remove();
-    const draft = userMessage(text, 'Отправляется…');
+    const draft = userMessage(text, 'Отправляется…', usedMode?.id);
     draft.classList.add('is-sending', 'is-new');
     const typing = typingIndicator();
     typing.classList.add('is-new');
@@ -229,6 +239,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     let answer = null;
     try {
       const exchange = await api.sendMessage(rawText, {
+        mode: usedMode?.id ?? null,
         onDelta(delta) {
           if (answer === null) {
             // Первая часть ответа: «Решаю…» сменяется текстом, который дальше допечатывается.
@@ -252,7 +263,7 @@ export function createChatView({ onSessionLost, onLogout }) {
       answer?.node.remove();
       typing.remove();
       if (sessionLost(error)) return;
-      markFailed(draft, text, error.message);
+      markFailed(draft, text, usedMode, error.message);
       scrollToEnd();
     } finally {
       waiting = false;
@@ -273,14 +284,77 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   // --- События ---
 
-  for (const suggestion of SUGGESTIONS) {
-    const button = el('button', { type: 'button', class: 'suggestion' },
-      el('span', { class: 'suggestion__label' }, suggestion.label),
-      el('span', { class: 'suggestion__text' }, unwrap(renderMarkdown(suggestion.display))),
-    );
-    button.addEventListener('click', () => send(suggestion.text));
-    suggestions.append(el('li', {}, button));
+  // --- Заготовки ---
+
+  function setMenuOpen(open) {
+    modeMenu.hidden = !open;
+    modeButton.setAttribute('aria-expanded', String(open));
   }
+
+  /** Выбрать заготовку (или снять выбор): меняются подпись кнопки, подсказка в поле и пустой экран. */
+  function setMode(next) {
+    mode = next;
+    modeLabel.textContent = mode ? mode.title : 'Заготовки';
+    modeButton.classList.toggle('is-active', mode !== null);
+    modeClear.hidden = mode === null;
+    input.placeholder = mode ? mode.placeholder : defaultPlaceholder;
+    for (const item of modeMenu.querySelectorAll('[role=menuitemradio]')) {
+      item.setAttribute('aria-checked', String(item.dataset.mode === mode?.id));
+    }
+
+    presets.hidden = mode !== null;
+    presetDetails.hidden = mode === null;
+    if (mode) {
+      const chosen = mode;
+      presetTitle.textContent = chosen.action;
+      presetDescription.textContent = chosen.description;
+      presetExamples.replaceChildren(
+        ...chosen.examples.map((example) => {
+          const button = el('button', { type: 'button', class: 'chip' }, example);
+          button.addEventListener('click', () => send(example, chosen));
+          return el('li', {}, button);
+        }),
+      );
+    }
+    setMenuOpen(false);
+    refresh();
+  }
+
+  function chooseMode(next) {
+    setMode(next);
+    input.focus();
+  }
+
+  for (const item of MODES) {
+    // карточка на пустом экране
+    const card = el('button', { type: 'button', class: 'preset' },
+      el('span', { class: 'preset__title' }, item.action),
+      el('span', { class: 'preset__text' }, item.description),
+    );
+    card.addEventListener('click', () => chooseMode(item));
+    presets.append(el('li', {}, card));
+
+    // пункт меню у поля ввода — заготовки доступны и посреди разговора
+    const option = el('button', { type: 'button', class: 'mode__option', role: 'menuitemradio', 'aria-checked': 'false', 'data-mode': item.id },
+      el('span', { class: 'mode__option-title' }, item.action),
+      el('span', { class: 'mode__option-text' }, item.description),
+    );
+    option.addEventListener('click', () => chooseMode(item));
+    modeMenu.append(el('li', { role: 'none' }, option));
+  }
+
+  modeButton.addEventListener('click', () => setMenuOpen(modeMenu.hidden));
+  modeClear.addEventListener('click', () => chooseMode(null));
+  presetBack.addEventListener('click', () => chooseMode(null));
+  document.addEventListener('click', (event) => {
+    if (!modeMenu.hidden && !event.target.closest('.mode')) setMenuOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modeMenu.hidden) {
+      setMenuOpen(false);
+      modeButton.focus();
+    }
+  });
 
   input.addEventListener('input', () => {
     autosize();
@@ -322,16 +396,10 @@ export function createChatView({ onSessionLost, onLogout }) {
     },
     hide() {
       view.hidden = true;
+      setMode(null);
       list.replaceChildren();
       setStatus();
       if (clearDialog.open) clearDialog.close();
     },
   };
-}
-
-/** Содержимое единственного абзаца без обёртки <p> — для коротких подписей с формулами. */
-function unwrap(fragment) {
-  const result = document.createDocumentFragment();
-  result.append(...fragment.firstChild.childNodes);
-  return result;
 }

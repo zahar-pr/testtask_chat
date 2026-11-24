@@ -79,12 +79,12 @@ export const listMessages = async () => (await request('GET', '/api/messages')).
 export const clearMessages = () => request('DELETE', '/api/messages');
 
 /**
- * Отправить вопрос. Ответ модели приходит потоком: каждая новая часть передаётся в onDelta,
+ * Отправить вопрос (mode — идентификатор заготовки или null). Ответ модели приходит потоком: каждая новая часть передаётся в onDelta,
  * а результат функции — сохранённая пара { user, assistant }. onReset вызывается, если ответ
  * оборвался и сервер запросил его заново: показанное до этого нужно стереть.
  */
-export async function sendMessage(text, { onDelta, onReset } = {}) {
-  const response = await call('POST', '/api/messages', { text });
+export async function sendMessage(text, { mode = null, onDelta, onReset } = {}) {
+  const response = await call('POST', '/api/messages', { text, mode });
   try {
     for await (const { event, data } of readEvents(response)) {
       if (event === 'delta') onDelta?.(data.text);

@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS messages (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     role       TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
     text       TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    mode       TEXT              -- заготовка, с которой отправлен вопрос (см. chat/modes.py)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -44,3 +45,7 @@ class Database:
         with self.connect() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
             connection.executescript(SCHEMA)
+            # База, созданная до появления заготовок: дополняем таблицу, данные не трогаем.
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(messages)")}
+            if "mode" not in columns:
+                connection.execute("ALTER TABLE messages ADD COLUMN mode TEXT")

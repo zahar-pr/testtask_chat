@@ -16,6 +16,7 @@ class Message:
     role: Role
     text: str
     created_at: datetime
+    mode: str | None = None  # заготовка — только у вопросов пользователя
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,7 @@ class NewMessage:
     role: Role
     text: str
     created_at: datetime
+    mode: str | None = None
 
 
 class MessageRepository:
@@ -32,7 +34,7 @@ class MessageRepository:
     def list_all(self) -> list[Message]:
         with self._database.connect() as connection:
             rows = connection.execute(
-                "SELECT id, role, text, created_at FROM messages ORDER BY id"
+                "SELECT id, role, text, created_at, mode FROM messages ORDER BY id"
             ).fetchall()
         return [_to_message(row) for row in rows]
 
@@ -42,7 +44,7 @@ class MessageRepository:
             return []
         with self._database.connect() as connection:
             rows = connection.execute(
-                "SELECT id, role, text, created_at FROM messages ORDER BY id DESC LIMIT ?", (limit,)
+                "SELECT id, role, text, created_at, mode FROM messages ORDER BY id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [_to_message(row) for row in reversed(rows)]
 
@@ -52,10 +54,12 @@ class MessageRepository:
         with self._database.connect() as connection:
             for message in messages:
                 cursor = connection.execute(
-                    "INSERT INTO messages (role, text, created_at) VALUES (?, ?, ?)",
-                    (message.role, message.text, to_storage(message.created_at)),
+                    "INSERT INTO messages (role, text, created_at, mode) VALUES (?, ?, ?, ?)",
+                    (message.role, message.text, to_storage(message.created_at), message.mode),
                 )
-                saved.append(Message(cursor.lastrowid, message.role, message.text, message.created_at))
+                saved.append(
+                    Message(cursor.lastrowid, message.role, message.text, message.created_at, message.mode)
+                )
         return saved
 
     def delete_all(self) -> None:
@@ -64,4 +68,4 @@ class MessageRepository:
 
 
 def _to_message(row) -> Message:
-    return Message(row["id"], row["role"], row["text"], from_storage(row["created_at"]))
+    return Message(row["id"], row["role"], row["text"], from_storage(row["created_at"]), row["mode"])

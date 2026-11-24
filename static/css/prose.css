@@ -42,7 +42,6 @@
 .nowrap { white-space: nowrap; }
 .math-error { font-size: .9em; color: var(--ink-soft); white-space: pre-wrap; text-align: left; }
 
-.suggestion .katex { font-size: 1.05em; }
 
 @media (max-width: 600px) {
   /* На телефоне выкладки чуть мельче, чтобы реже приходилось прокручивать их вбок. */

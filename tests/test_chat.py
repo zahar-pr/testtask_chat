@@ -94,6 +94,48 @@ def test_model_receives_limited_context(authed, llm):
     assert [t.role for t in turns] == ["user", "assistant", "user", "assistant", "user"]
 
 
+def test_preset_mode_is_stored_and_shapes_the_request_to_the_model(authed, llm):
+    events = sse_events(authed.post("/api/messages", json={"text": "дискриминант", "mode": "learn"}))
+    authed.post("/api/messages", json={"text": "а попроще?"})
+
+    assert events[-1][1]["user"] == events[-1][1]["user"] | {"text": "дискриминант", "mode": "learn"}
+    history = authed.get("/api/messages").json()["messages"]
+    assert [m["mode"] for m in history] == ["learn", None, None, None]
+    # модель получает название режима — и для нового вопроса, и для вопросов из контекста
+    assert llm.calls[0][-1].text == "Режим «Изучение с нуля». Тема: дискриминант"
+    assert [t.text for t in llm.calls[1] if t.role == "user"] == [
+        "Режим «Изучение с нуля». Тема: дискриминант", "а попроще?"]
+
+
+def test_unknown_mode_is_rejected(authed, llm):
+    assert authed.post("/api/messages", json={"text": "2+2", "mode": "hack"}).status_code == 422
+    assert llm.calls == []
+
+
+def test_database_created_before_presets_is_upgraded(settings, llm):
+    import sqlite3
+
+    from fastapi.testclient import TestClient as Client
+
+    from tests.conftest import ACCESS_KEY
+
+    old = sqlite3.connect(settings.database_path)
+    old.executescript(
+        "CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, "
+        "text TEXT NOT NULL, created_at TEXT NOT NULL);"
+        "INSERT INTO messages (role, text, created_at) VALUES ('user', 'старый вопрос', '2026-11-01T10:00:00.000+00:00');"
+        "INSERT INTO messages (role, text, created_at) VALUES ('assistant', 'старый ответ', '2026-11-01T10:00:05.000+00:00');"
+    )
+    old.commit()
+    old.close()
+
+    client = Client(create_app(settings, llm))
+    client.post("/api/auth/login", json={"access_key": ACCESS_KEY})
+    history = client.get("/api/messages").json()["messages"]
+    assert [(m["text"], m["mode"]) for m in history] == [("старый вопрос", None), ("старый ответ", None)]
+    assert client.post("/api/messages", json={"text": "новый", "mode": "solve"}).status_code == 201
+
+
 def test_clear_history(authed):
     authed.post("/api/messages", json={"text": "2+2?"})
     assert authed.delete("/api/messages").status_code == 204

@@ -43,7 +43,7 @@ def send_message(payload: MessageRequest, chat: Chat) -> StreamingResponse:
     - `done` `{"user", "assistant"}` — пара сохранена в историю;
     - `error` `{"code", "message"}` — ответ оборвался, в историю ничего не попало.
     """
-    events = chat.send(payload.text)
+    events = chat.send(payload.text, payload.mode)
     # Первую часть ждём до отправки заголовков: если модель не ответила вовсе, клиент получит
     # обычную ошибку с HTTP-статусом (её вернёт общий обработчик LLMError), а не «успешный» поток.
     first = next(events)

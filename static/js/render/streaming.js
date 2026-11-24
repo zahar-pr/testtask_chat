@@ -4,7 +4,7 @@
 // сырым LaTeX, а потом скачком превратилась в формулу. Поэтому до разбора от текста отрезается
 // «хвост», который ещё не закончен, — формула появляется целиком, когда дописана.
 
-import { isWidget } from '../widgets/index.js';
+import { CLOSING_FENCE, isWidget, jsonObjectEnd } from '../widgets/index.js';
 import { PENDING_PREFIX } from './markdown.js';
 
 const NOT_MATH = -1; // строка закончилась без закрывающего $ — это был просто знак доллара
@@ -13,10 +13,29 @@ const PENDING = -2; // текст оборвался посреди формул
 /** Часть текста, которую уже можно показывать: без незаконченной формулы в конце. */
 export function stablePart(text) {
   let index = 0;
+  let lateCloser = false; // после блока без закрывающей строки она может встретиться ниже
   while (index < text.length) {
     const char = text[index];
 
     if (text.startsWith('```', index)) {
+      const widget = widgetFence(text, index);
+      if (widget) {
+        // График или тренажёр: блок готов, когда дописано его JSON-описание.
+        if (widget.end === -1) return `${tidy(text.slice(0, index))}\n\n\`\`\`${PENDING_PREFIX}${widget.kind}\n\n\`\`\``;
+        const rest = text.slice(widget.end);
+        if (/^\s*`{0,2}$/.test(rest)) return text.slice(0, widget.end); // закрывающая строка ``` ещё печатается
+        const closing = CLOSING_FENCE.exec(rest);
+        lateCloser = !closing;
+        index = widget.end + (closing?.[0].length ?? 0);
+        continue;
+      }
+      const lineEnd = text.indexOf('\n', index);
+      if (lateCloser && lineEnd !== -1 && text.slice(index + 3, lineEnd).trim() === '') {
+        lateCloser = false; // запоздавшая закрывающая строка блока — это не начало блока кода
+        index = lineEnd;
+        continue;
+      }
+      lateCloser = false;
       const close = text.indexOf('```', index + 3);
       if (close === -1) return unfinishedFence(text, index);
       index = close + 3;
@@ -55,16 +74,17 @@ export function stablePart(text) {
   return tidy(text);
 }
 
-/**
- * Недописанный блок ```…: обычный код показываем как есть, а описание графика или тренажёра
- * прячем за заглушкой «Рисую график…» — сырой JSON на экране ни к чему.
- */
-function unfinishedFence(text, start) {
+/** Если с позиции start начинается блок графика или тренажёра — его вид и конец описания (-1: не дописано). */
+function widgetFence(text, start) {
   const lineEnd = text.indexOf('\n', start);
-  if (lineEnd === -1) return tidy(text.slice(0, start)); // ещё не дописано даже название блока
+  if (lineEnd === -1) return null;
   const kind = text.slice(start + 3, lineEnd).trim().toLowerCase();
-  if (!isWidget(kind)) return text;
-  return `${tidy(text.slice(0, start))}\n\n\`\`\`${PENDING_PREFIX}${kind}\n\n\`\`\``;
+  return isWidget(kind) ? { kind, end: jsonObjectEnd(text, lineEnd + 1) } : null;
+}
+
+/** Недописанный блок обычного кода показываем как есть; пока не дописано даже название — прячем. */
+function unfinishedFence(text, start) {
+  return text.includes('\n', start) ? text : tidy(text.slice(0, start));
 }
 
 function closingDollar(text, from) {
