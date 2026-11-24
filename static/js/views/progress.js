@@ -2,15 +2,15 @@
 import * as api from '../api.js';
 import { $, el } from '../dom.js';
 import { renderInlineMarkdown } from '../render/markdown.js';
-import { confirmAction } from './confirm.js';
+import { confirmAction, notify } from './confirm.js';
 
 const OUTCOME_LABELS = { solved: 'не с первой попытки', revealed: 'с подсмотренным решением' };
 
 /**
- * onReview() — нажали «Потренировать ошибки»; onSessionLost() — сессия закончилась;
+ * onReview() — нажали «Потренировать ошибки»;
  * untilSaved() — Promise, который завершается, когда все результаты заданий дошли до сервера.
  */
-export function createProgressPanel({ onReview, onSessionLost, untilSaved }) {
+export function createProgressPanel({ onReview, untilSaved }) {
   const dialog = $('#progress-dialog');
   const content = $('#progress-content');
   const reviewButton = $('#progress-review');
@@ -69,11 +69,7 @@ export function createProgressPanel({ onReview, onSessionLost, untilSaved }) {
       await untilSaved();
       render(await api.getProgress());
     } catch (error) {
-      if (error.status === 401) {
-        dialog.close();
-        onSessionLost();
-        return;
-      }
+      if (error.unauthorized) return; // уходим на экран входа — панель закроется вместе с чатом
       content.replaceChildren(el('p', { class: 'progress__empty' }, `Не удалось загрузить прогресс. ${error.message}`));
     }
   }
@@ -89,7 +85,12 @@ export function createProgressPanel({ onReview, onSessionLost, untilSaved }) {
       action: 'Сбросить',
     });
     if (!confirmed) return;
-    await api.resetProgress().catch(() => {});
+    try {
+      await api.resetProgress();
+    } catch (error) {
+      if (!error.unauthorized) notify(`Не удалось сбросить прогресс. ${error.message}`);
+      return;
+    }
     load();
   });
   $('#progress-close').addEventListener('click', () => dialog.close());

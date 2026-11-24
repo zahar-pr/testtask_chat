@@ -16,11 +16,12 @@ def wait_for_answer(page) -> None:
 
 
 def questions(page) -> list[str]:
-    """Тексты вопросов в ленте — как их набрал пользователь (на экране формулы в них отрисованы)."""
-    return page.evaluate(
-        "[...document.querySelectorAll('#messages .message--user')]"
-        ".map(node => node.message?.text ?? node.querySelector('.message__text').textContent)"
-    )
+    """Сохранённые вопросы открытого чата — как их набрал пользователь (на экране формулы в них отрисованы)."""
+    chat = page.url.partition("#")[2]
+    if not chat.isdigit():
+        return []  # новый чат: в нём ещё ничего не сохранено
+    saved = page.request.get(f"/api/chats/{chat}/messages").json()["messages"]
+    return [message["text"] for message in saved if message["role"] == "user"]
 
 
 def answers(page) -> list[str]:

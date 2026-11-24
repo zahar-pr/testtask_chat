@@ -7,6 +7,21 @@ export class ApiError extends Error {
     this.status = status;
     this.code = code;
   }
+
+  /** Сессия закончилась: приложение уже уходит на экран входа, показывать ошибку не нужно. */
+  get unauthorized() {
+    return this.code === 'not_authenticated';
+  }
+}
+
+let onUnauthorized = () => {};
+
+/**
+ * Что делать, когда сервер отвечает «нужен вход» на любой запрос (сессия истекла или отозвана).
+ * Задаётся один раз в main.js — экранам не нужно проверять это каждому по отдельности.
+ */
+export function setUnauthorizedHandler(handler) {
+  onUnauthorized = handler;
 }
 
 const NETWORK_ERROR = 'Нет связи с сервером. Проверьте подключение и попробуйте ещё раз.';
@@ -31,11 +46,13 @@ async function call(method, path, body, signal) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
-    throw new ApiError(
+    const error = new ApiError(
       response.status,
       payload?.error?.code ?? 'unknown_error',
       payload?.error?.message ?? `Сервер ответил ошибкой (${response.status}). Попробуйте ещё раз.`,
     );
+    if (error.unauthorized) onUnauthorized();
+    throw error;
   }
   return response;
 }

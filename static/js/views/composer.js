@@ -44,6 +44,7 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
   let editing = false; // в поле — последний вопрос чата: отправка заменит его и ответ
   let busy = false; // модель отвечает
   let ready = false; // чат открыт, можно писать
+  let stoppable = false; // ответ ещё идёт с сервера — его можно остановить
 
   function refresh() {
     const check = checkMessage(input.value);
@@ -58,7 +59,7 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
     sendButton.disabled = busy || !ready || !check.valid;
     sendButton.classList.toggle('is-busy', busy);
     sendButton.setAttribute('aria-label', busy ? 'Ждём ответа' : 'Отправить');
-    stopButton.hidden = !busy;
+    stopButton.hidden = !stoppable;
     editBanner.hidden = !editing;
   }
 
@@ -153,11 +154,17 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
 
   // --- Ввод и отправка ---
 
-  function stopEditing() {
+  /**
+   * Вернуть поле в исходное состояние: без заготовки и без правки. Заготовка и правка действуют
+   * на одно сообщение, поэтому сбрасываются после каждой отправки. keepText — не трогать набранный
+   * текст (вопрос ушёл не из поля, а кнопкой или примером).
+   */
+  function reset({ keepText = false } = {}) {
     editing = false;
-    setText('');
+    if (!keepText) input.value = '';
+    autosize();
     setMode(null);
-    onEditingChange();
+    refresh();
   }
 
   input.addEventListener('input', () => {
@@ -175,14 +182,13 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
     const text = input.value;
     if (busy || !ready || !checkMessage(text).valid) return;
     const submitted = { text, mode, replaceLast: editing };
-    editing = false;
-    setText('');
-    setMode(null); // заготовка действует на одно сообщение
+    reset();
     onSubmit(submitted);
   });
   stopButton.addEventListener('click', onStop);
   $('#edit-cancel').addEventListener('click', () => {
-    stopEditing();
+    reset();
+    onEditingChange();
     input.focus();
   });
 
@@ -195,9 +201,9 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
     },
     setMode,
     chooseMode,
-    /** busy — модель отвечает; ready — чат открыт и в него можно писать. */
+    /** busy — ждём ответ; stoppable — его ещё можно остановить; ready — чат открыт, в него можно писать. */
     setState(state) {
-      ({ busy, ready } = state);
+      ({ busy, stoppable, ready } = state);
       refresh();
     },
     /** Вернуть вопрос в поле, чтобы исправить его; replacesLast — отправка заменит последнюю пару чата. */
@@ -208,17 +214,7 @@ export function createComposer({ onSubmit, onStop, onModeChange, onEditingChange
       onEditingChange();
       input.focus();
     },
-    /** Снять заготовку и правку, не трогая набранный текст: вопрос ушёл другим путём (кнопкой, примером). */
-    clearMode() {
-      editing = false;
-      setMode(null);
-      refresh();
-    },
-    reset() {
-      editing = false;
-      setText('');
-      setMode(null);
-    },
+    reset,
     focus: () => input.focus(),
   };
 }

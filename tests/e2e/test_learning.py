@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tests.e2e.helpers import ask, wait_for_answer
+from tests.e2e.helpers import ask, wait_for_answer, wait_until
 
 
 def test_preset_lesson_has_sections_plot_and_trainer(chat, llm):
@@ -26,10 +26,11 @@ def test_plot_slider_redraws_curve_and_readout(chat):
     ask(chat, "дискриминант")
     plot = chat.locator(".plot").first
 
-    before = plot.locator("path.plot__curve").get_attribute("d")
+    curve = lambda: plot.locator("path.plot__curve").get_attribute("d")  # noqa: E731
+    wait_until(chat, lambda: curve() is not None)  # рисунок появляется, когда блок попал на страницу
+    before = curve()
     plot.locator("input[type=range]").fill("2")
-    chat.wait_for_timeout(200)
-    assert plot.locator("path.plot__curve").get_attribute("d") != before
+    wait_until(chat, lambda: curve() != before)
     assert plot.locator(".plot__readout-value").inner_text() == "17"  # D = 25 − 4·2
 
 

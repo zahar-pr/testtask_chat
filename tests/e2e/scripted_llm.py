@@ -44,6 +44,24 @@ TRAINER = """Потренируемся.
 """
 
 
+# Ответ, в котором модель (например, после удачной атаки на промпт) пытается протащить
+# исполняемую разметку всеми путями: в тексте, в ссылке, в формуле, в подписях рисунка и в тренажёре.
+HOSTILE = """Обычный текст <img src=x onerror="window.pwned = 1"> и <script>window.pwned = 1</script>.
+
+[опасная ссылка](javascript:window.pwned=1) и [обычная ссылка](https://example.com/page).
+
+Формула со ссылкой: $\\href{javascript:window.pwned=1}{x}$ и <iframe src="https://example.com"></iframe>.
+
+```plot
+{"title": "<img src=x onerror='window.pwned = 1'>", "x": [0, 1], "functions": [{"expr": "x", "label": "<b onclick='window.pwned = 1'>жирный</b>"}], "points": [{"x": 0.5, "y": 0.5, "label": "<script>window.pwned = 1</script>"}], "caption": "<a href='javascript:window.pwned=1'>подпись</a>"}
+```
+
+```trainer
+{"title": "<img src=x onerror='window.pwned = 1'>", "tasks": [{"question": "<img src=x onerror='window.pwned = 1'> Сколько будет 2 + 2?", "options": ["<script>window.pwned = 1</script>", "4"], "answer": 2, "hint": "<svg onload='window.pwned = 1'></svg>"}]}
+```
+"""
+
+
 class ScriptedLLM:
     """Что ответить, решает текст последнего вопроса — так тест управляет «моделью» словами."""
 
@@ -64,7 +82,9 @@ class ScriptedLLM:
                 time.sleep(0.05)
             return
 
-        if "изучение с нуля" in lowered:
+        if "враждебный ответ" in lowered:
+            answer = HOSTILE
+        elif "изучение с нуля" in lowered:
             answer = LESSON
         elif "тренировка" in lowered or "работа над ошибками" in lowered:
             answer = TRAINER

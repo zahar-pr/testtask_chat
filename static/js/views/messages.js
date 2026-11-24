@@ -1,6 +1,9 @@
 // Лента сообщений: записи из истории, вопрос в ожидании ответа, «печать» ответа по мере
 // генерации, вопрос без ответа (сбой или остановка) и действия у последней пары.
 // Здесь только отрисовка — запросы к серверу делает chat.js.
+//
+// Что сейчас в ленте, хранится в переменных (stored, unanswered, exchanging), а не выводится
+// из разметки: по ним решается, какая пара последняя, пуст ли чат и можно ли показать действия.
 import { $, el } from '../dom.js';
 import { DEFAULT_FOLLOWUPS, modeById } from '../modes.js';
 import { timeElement } from '../render/datetime.js';
@@ -31,6 +34,11 @@ const button = (label, kind, onClick) => {
 export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onEdit, onChange }) {
   const scroller = $('#chat-scroll');
   const list = $('#messages');
+
+  let stored = []; // сохранённые сообщения чата по порядку: [{ message, node }]
+  let unanswered = null; // вопрос, оставшийся без ответа (сбой или остановка), — его узел в ленте
+  let exchanging = false; // вопрос отправлен, ответ ещё не получен
+  let actions = []; // узлы с действиями у последней пары
 
   const scrollToEnd = () => scroller.scrollTo({ top: scroller.scrollHeight });
   const isNearEnd = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < FOLLOW_DISTANCE_PX;
@@ -64,9 +72,10 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
         timeElement(message.created_at),
       );
     node.dataset.id = message.id;
-    node.message = message; // нужен действиям «изменить» и «ответить заново»
     return node;
   }
+
+  const entry = (message, widgets = null) => ({ message, node: storedMessage(message, widgets) });
 
   function typingIndicator() {
     const label = el('span', { class: 'typing__label' }, 'Решаю…');
@@ -148,8 +157,13 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
 
   /** Последняя сохранённая пара чата: [вопрос, ответ] — или [], если её нет. */
   function lastPair() {
-    const [question, answer] = [...list.querySelectorAll('.message[data-id]')].slice(-2);
+    const [question, answer] = stored.slice(-2);
     return question?.message.role === 'user' && answer?.message.role === 'assistant' ? [question, answer] : [];
+  }
+
+  function dropUnanswered() {
+    unanswered?.remove();
+    unanswered = null;
   }
 
   /**
@@ -157,14 +171,15 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
    * «изменить вопрос». У более ранних сообщений их нет — менять можно только конец разговора.
    */
   function refreshActions(enabled) {
-    for (const stale of list.querySelectorAll('.message__actions')) stale.remove();
-    if (!enabled || list.querySelector('.is-failed, .is-stopped')) return;
+    for (const stale of actions) stale.remove();
+    actions = [];
+    if (!enabled || unanswered) return;
     const [question, answer] = lastPair();
     if (!question) return;
 
     const asked = question.message;
     const followups = modeById(asked.mode)?.followups ?? DEFAULT_FOLLOWUPS;
-    $('.message__main', answer).append(
+    actions = [
       el('div', { class: 'message__actions' },
         ...followups.map((item) => {
           const chip = el('button', { type: 'button', class: 'chip chip--small' }, item.label);
@@ -173,10 +188,10 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
         }),
         button('Ответить заново', 'ghost', () => onRegenerate(asked)),
       ),
-    );
-    $('.message__main', question).append(
       el('div', { class: 'message__actions' }, button('Изменить', 'ghost', () => onEdit(asked))),
-    );
+    ];
+    $('.message__main', answer.node).append(actions[0]);
+    $('.message__main', question.node).append(actions[1]);
   }
 
   // --- Вопрос в ожидании ответа ---
@@ -187,10 +202,12 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
    * replaceLast — вопрос заменяет последнюю пару чата: «ответить заново» и правка вопроса.
    */
   function begin(text, modeId, { replaceLast = false } = {}) {
-    for (const unanswered of list.querySelectorAll('.is-failed, .is-stopped')) unanswered.remove();
-    // Заменяемую пару убираем с экрана, но не забываем: при сбое сервер её сохранит — вернём и мы.
+    dropUnanswered();
+    // Заменяемую пару убираем из ленты, но не забываем: при сбое сервер её сохранит — вернём и мы.
     const replaced = replaceLast ? lastPair() : [];
-    for (const node of replaced) node.remove();
+    for (const { node } of replaced) node.remove();
+    stored = stored.slice(0, stored.length - replaced.length);
+    exchanging = true;
 
     const draft = userMessage(text, 'Отправляется…', modeId);
     draft.classList.add('is-sending', 'is-new');
@@ -221,8 +238,12 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
         await answer?.settled();
         const follow = isNearEnd();
         answer?.saved(exchange.assistant.id);
-        draft.replaceWith(storedMessage(exchange.user));
-        (answer?.node ?? typing).replaceWith(storedMessage(exchange.assistant, answer?.widgets));
+        const question = entry(exchange.user);
+        const reply = entry(exchange.assistant, answer?.widgets);
+        draft.replaceWith(question.node);
+        (answer?.node ?? typing).replaceWith(reply.node);
+        stored.push(question, reply);
+        exchanging = false;
         if (follow) scrollToEnd();
       },
       /**
@@ -231,13 +252,16 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
        */
       fail(error, { onRetry, onEdit: onEditDraft }) {
         removeAnswer();
-        draft.before(...replaced);
+        draft.before(...replaced.map(({ node }) => node));
+        stored.push(...replaced);
+        exchanging = false;
+        unanswered = draft;
         const wasStopped = error.code === 'stopped';
         draft.classList.replace('is-sending', wasStopped ? 'is-stopped' : 'is-failed');
         $('.message__meta', draft).textContent = wasStopped ? 'Остановлено' : 'Не отправлено';
 
         const then = (action) => () => {
-          draft.remove();
+          dropUnanswered();
           action();
         };
         $('.message__main', draft).append(
@@ -256,17 +280,26 @@ export function createMessageList({ recordAttempt, onFollowup, onRegenerate, onE
       discard() {
         removeAnswer();
         draft.remove();
+        exchanging = false;
       },
     };
   }
 
   return {
+    /** В ленте нет ни сохранённых сообщений, ни отправленного или оставшегося без ответа вопроса. */
     get isEmpty() {
-      return list.childElementCount === 0;
+      return stored.length === 0 && !exchanging && unanswered === null;
     },
-    clear: () => list.replaceChildren(),
+    clear() {
+      stored = [];
+      unanswered = null;
+      exchanging = false;
+      actions = [];
+      list.replaceChildren();
+    },
     showHistory(messages) {
-      list.replaceChildren(...messages.map((message) => storedMessage(message)));
+      stored = messages.map((message) => entry(message));
+      list.replaceChildren(...stored.map(({ node }) => node));
       scrollToEnd();
     },
     begin,

@@ -39,9 +39,9 @@ def test_answer_is_streamed_and_send_is_locked_meanwhile(chat):
     chat.wait_for_selector(".message.is-streaming")
     assert chat.locator("#send-button").is_disabled()  # кнопка отправки заблокирована на время ответа
     assert chat.input_value("#message-input") == ""
-    first = len(chat.inner_text(".message.is-streaming .prose"))
-    chat.wait_for_timeout(600)
-    assert len(chat.inner_text(".message.is-streaming .prose")) > first  # текст допечатывается
+    shown = lambda: len(chat.inner_text(".message.is-streaming .prose"))  # noqa: E731
+    first = shown()
+    wait_until(chat, lambda: shown() > first)  # текст допечатывается по мере генерации
 
     chat.click("#stop-button")
     chat.wait_for_selector(".message.is-stopped")
@@ -138,13 +138,12 @@ def test_layout_fits_a_phone_and_long_chat_titles(chat):
     assert not overflows_horizontally(chat, "#sidebar")
 
     chat.set_viewport_size({"width": 390, "height": 800})
-    chat.wait_for_timeout(300)
+    wait_until(chat, lambda: not chat.locator("#sidebar").is_visible())  # колонка чатов стала выезжающей панелью
     assert not overflows_horizontally(chat, "html")
     assert not overflows_horizontally(chat, "#chat-scroll")
     assert not chat.locator("#sidebar").is_visible()
     chat.click("#sidebar-toggle")
-    chat.wait_for_timeout(300)
-    assert chat.locator("#sidebar").is_visible()
+    chat.wait_for_selector("#sidebar", state="visible")
     chat.click("#sidebar-backdrop", position={"x": 370, "y": 400})
 
     # самый тесный случай: идёт ответ, в строке под полем ввода видны все кнопки сразу

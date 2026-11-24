@@ -13,16 +13,27 @@ import { createProgressPanel } from './progress.js';
 import { createSidebar } from './sidebar.js';
 import { createWelcome } from './welcome.js';
 
-export function createChatView({ onSessionLost, onLogout }) {
+export function createChatView({ onLogout }) {
   const view = $('#chat-view');
   const status = $('#chat-status');
   const clearButton = $('#clear-button');
 
-  let chatId = null; // открытый чат; null — новый, он сохранится вместе с первым ответом
-  let opening = 0; // номер последнего открытия чата: ответ на устаревший запрос истории игнорируем
-  let loaded = false; // история открытого чата получена с сервера
-  let waiting = false; // ждём ответа модели
+  // Состояние экрана. Меняется только через setState — он же обновляет все элементы управления.
+  const state = {
+    chatId: null, // открытый чат; null — новый, он сохранится вместе с первым ответом
+    loaded: false, // история открытого чата получена с сервера
+    waiting: false, // ждём ответа модели
+    stoppable: false, // ответ ещё идёт с сервера — его можно остановить
+  };
+  // Поколение экрана: растёт, когда открывают другой чат или уходят с экрана. Асинхронное
+  // действие запоминает его в начале и после каждого ожидания проверяет — не устарело ли.
+  let generation = 0;
   let abort = null; // AbortController идущего запроса — для кнопки «Остановить»
+
+  function setState(patch) {
+    Object.assign(state, patch);
+    render();
+  }
 
   const sidebar = createSidebar({
     onSelect: (id) => open(id),
@@ -45,7 +56,6 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   // «Мой прогресс»: результаты тренажёров и тренировка по своим ошибкам в новом чате.
   const progress = createProgressPanel({
-    onSessionLost,
     untilSaved: () => Promise.all(saving),
     async onReview() {
       await open(null);
@@ -58,7 +68,7 @@ export function createChatView({ onSessionLost, onLogout }) {
     onFollowup: (item) => send(item.text, modeById(item.mode)),
     onRegenerate: (question) => send(question.text, modeById(question.mode), { replaceLast: true }),
     onEdit: (question) => composer.startEditing(question.text, modeById(question.mode), true),
-    onChange: refresh,
+    onChange: render,
   });
 
   const welcome = createWelcome({
@@ -70,13 +80,14 @@ export function createChatView({ onSessionLost, onLogout }) {
     onSubmit: ({ text, mode, replaceLast }) => send(text, mode, { replaceLast }),
     onStop: () => abort?.abort(),
     onModeChange: (mode) => welcome.showMode(mode),
-    onEditingChange: refresh,
+    onEditingChange: render,
   });
 
-  // --- Состояние элементов управления ---
+  // --- Отображение состояния ---
 
-  function refresh() {
-    composer.setState({ busy: waiting, ready: loaded });
+  function render() {
+    const { chatId, loaded, waiting, stoppable } = state;
+    composer.setState({ busy: waiting, stoppable, ready: loaded });
     welcome.setVisible(loaded && messages.isEmpty);
     welcome.setDisabled(waiting);
     clearButton.disabled = waiting || chatId === null;
@@ -91,13 +102,6 @@ export function createChatView({ onSessionLost, onLogout }) {
     const retry = el('button', { type: 'button', class: 'button button--secondary button--small' }, 'Повторить');
     retry.addEventListener('click', onRetry);
     status.replaceChildren(message, el('div', {}, retry));
-  }
-
-  /** true, если ошибка означает, что сессия закончилась и мы ушли на экран входа. */
-  function sessionLost(error) {
-    if (error.status !== 401) return false;
-    onSessionLost();
-    return true;
   }
 
   // --- Какой чат открыт ---
@@ -116,49 +120,51 @@ export function createChatView({ onSessionLost, onLogout }) {
 
   /** Загрузить список чатов и открыть нужный: из адреса страницы или последний по времени. */
   async function start() {
-    loaded = false;
+    const mine = ++generation;
     messages.clear();
     setStatus('Загружаем чаты…');
-    refresh();
+    setState({ chatId: null, loaded: false });
+    let chats;
     try {
-      sidebar.setChats(await api.listChats());
+      chats = await api.listChats();
     } catch (error) {
-      if (!sessionLost(error)) setStatus(`Не удалось загрузить чаты. ${error.message}`, start);
+      if (mine === generation && !error.unauthorized) setStatus(`Не удалось загрузить чаты. ${error.message}`, start);
       return;
     }
+    if (mine !== generation) return;
+    sidebar.setChats(chats);
     const wanted = chatFromAddress();
     await open(wanted !== undefined && (wanted === null || sidebar.has(wanted)) ? wanted : sidebar.latest());
   }
 
   /** Открыть сохранённый чат или (id = null) пустой новый. */
   async function open(id) {
-    const attempt = ++opening;
-    chatId = id;
-    loaded = id === null;
+    const mine = ++generation;
     sidebar.setActive(id);
     rememberInAddress(id);
-    composer.clearMode();
+    composer.reset({ keepText: true });
     messages.clear();
     setStatus(id === null ? undefined : 'Загружаем историю…');
-    refresh();
+    setState({ chatId: id, loaded: id === null });
     if (id === null) return;
 
+    let history;
     try {
-      const history = await api.listMessages(id);
-      if (attempt !== opening) return; // пока грузилось, открыли другой чат
-      messages.showHistory(history);
-      loaded = true;
-      setStatus();
+      history = await api.listMessages(id);
     } catch (error) {
-      if (attempt !== opening || sessionLost(error)) return;
+      if (mine !== generation || error.unauthorized) return;
       if (error.status === 404) { // чат удалили в другой вкладке
         sidebar.remove(id);
         open(null);
         return;
       }
       setStatus(`Не удалось загрузить историю. ${error.message}`, () => open(id));
+      return;
     }
-    refresh();
+    if (mine !== generation) return; // пока грузилось, открыли другой чат
+    messages.showHistory(history);
+    setStatus();
+    setState({ loaded: true });
   }
 
   // --- Вопрос и ответ ---
@@ -169,34 +175,36 @@ export function createChatView({ onSessionLost, onLogout }) {
    */
   async function send(rawText, usedMode = null, { replaceLast = false } = {}) {
     const text = rawText.trim();
-    if (waiting || !loaded || !checkMessage(rawText).valid) return;
+    if (state.waiting || !state.loaded || !checkMessage(rawText).valid) return;
 
-    composer.clearMode(); // заготовка действует на одно сообщение
+    const mine = generation;
+    composer.reset({ keepText: true }); // вопрос мог уйти не из поля, а кнопкой или примером
     const pending = messages.begin(text, usedMode?.id ?? null, { replaceLast });
-    waiting = true;
     abort = new AbortController();
-    refresh();
+    setState({ waiting: true, stoppable: true });
     messages.scrollToEnd();
 
     try {
       const exchange = await api.sendMessage(rawText, {
-        chatId,
+        chatId: state.chatId,
         mode: usedMode?.id ?? null,
         replaceLast: pending.replacesLast,
         signal: abort.signal,
         onDelta: pending.push,
         onReset: pending.reset,
       });
+      if (mine !== generation) return; // с экрана ушли, пока шёл ответ
+      setState({ stoppable: false }); // ответ получен целиком — останавливать уже нечего, идёт только «печать»
       await pending.complete(exchange);
+      if (mine !== generation) return;
       // Новый чат сохранился вместе с первым ответом — теперь у него есть номер и место в списке.
-      chatId = exchange.chat.id;
       sidebar.upsert(exchange.chat);
-      sidebar.setActive(chatId);
-      rememberInAddress(chatId);
+      sidebar.setActive(exchange.chat.id);
+      rememberInAddress(exchange.chat.id);
+      setState({ chatId: exchange.chat.id });
     } catch (error) {
-      if (error.status === 401) {
+      if (mine !== generation || error.unauthorized) {
         pending.discard();
-        onSessionLost();
         return;
       }
       pending.fail(error, {
@@ -204,15 +212,14 @@ export function createChatView({ onSessionLost, onLogout }) {
         onEdit: () => composer.startEditing(text, usedMode, pending.replacesLast),
       });
     } finally {
-      waiting = false;
       abort = null;
-      refresh();
+      if (mine === generation) setState({ waiting: false, stoppable: false });
     }
   }
 
   /** «Очистить»: удалить открытый чат со всеми сообщениями и начать новый. */
   async function clearChat() {
-    const id = chatId;
+    const id = state.chatId;
     const confirmed = await confirmAction({
       title: 'Очистить этот чат?',
       text: 'Чат и все его сообщения будут удалены без возможности восстановления. Остальные чаты останутся.',
@@ -221,12 +228,13 @@ export function createChatView({ onSessionLost, onLogout }) {
     if (!confirmed || id === null) return;
     try {
       await api.deleteChat(id);
-      sidebar.remove(id);
-      await open(null);
-      composer.focus();
     } catch (error) {
-      if (!sessionLost(error)) notify(`Не удалось очистить чат. ${error.message}`);
+      if (!error.unauthorized) notify(`Не удалось очистить чат. ${error.message}`);
+      return;
     }
+    sidebar.remove(id);
+    await open(null);
+    composer.focus();
   }
 
   // --- События ---
@@ -240,8 +248,8 @@ export function createChatView({ onSessionLost, onLogout }) {
   // Адрес изменили вручную или кнопкой «Назад» — открываем указанный в нём чат.
   window.addEventListener('hashchange', () => {
     const wanted = chatFromAddress();
-    if (view.hidden || wanted === undefined || wanted === chatId) return;
-    if (waiting) rememberInAddress(chatId); // пока идёт ответ, остаёмся в текущем чате
+    if (view.hidden || wanted === undefined || wanted === state.chatId) return;
+    if (state.waiting) rememberInAddress(state.chatId); // пока идёт ответ, остаёмся в текущем чате
     else open(wanted);
   });
 
@@ -253,15 +261,14 @@ export function createChatView({ onSessionLost, onLogout }) {
     },
     hide() {
       view.hidden = true;
-      opening += 1;
+      generation += 1; // всё, что ещё выполняется для этого экрана, устарело
       abort?.abort();
-      chatId = null;
-      loaded = false;
       sidebar.close();
       sidebar.setChats([]);
       composer.reset();
       messages.clear();
       setStatus();
+      setState({ chatId: null, loaded: false, waiting: false, stoppable: false });
       for (const dialog of document.querySelectorAll('dialog[open]')) dialog.close();
     },
   };

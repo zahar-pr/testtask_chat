@@ -4,10 +4,10 @@ import { createChatView } from './views/chat.js';
 import { createLoginView } from './views/login.js';
 
 const loginView = createLoginView({ onSuccess: showChat });
-const chatView = createChatView({
-  onSessionLost: () => showLogin('Сессия завершилась. Введите ключ доступа ещё раз.'),
-  onLogout: () => showLogin(),
-});
+const chatView = createChatView({ onLogout: () => showLogin() });
+
+// Любой запрос может обнаружить, что сессия закончилась, — реагируем на это в одном месте.
+api.setUnauthorizedHandler(() => showLogin('Сессия завершилась. Введите ключ доступа ещё раз.'));
 
 function showLogin(notice) {
   chatView.hide();
